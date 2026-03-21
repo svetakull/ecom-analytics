@@ -22,7 +22,7 @@ app = FastAPI(title="Ecom Analytics", version="1.0.0", docs_url="/api/docs", lif
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
