@@ -253,6 +253,8 @@ export interface OtsifrovkaRow {
   storage_rub: number
   return_fee_rub: number
   fines_rub: number
+  acceptance_rub: number
+  other_deductions_rub: number
   ad_spend_rub: number
   ad_search_pct: number
   ad_recommend_pct: number
