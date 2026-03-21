@@ -22,8 +22,9 @@ export default function LoginPage() {
       )
       setAuth(data.access_token, user)
       navigate('/')
-    } catch {
-      setError('Неверный email или пароль')
+    } catch (err: any) {
+      console.error('Login error:', err?.response?.status, err?.response?.data, err?.message)
+      setError(err?.response?.data?.detail || err?.message || 'Неверный email или пароль')
     } finally {
       setLoading(false)
     }
