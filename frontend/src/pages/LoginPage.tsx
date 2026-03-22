@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/store/auth'
 import { authApi } from '@/api/endpoints'
+import { api } from '@/api/client'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -17,9 +18,9 @@ export default function LoginPage() {
     setLoading(true)
     try {
       const { data } = await authApi.login(email, password)
-      const { data: user } = await import('@/api/client').then(({ api }) =>
-        api.get('/auth/me', { headers: { Authorization: `Bearer ${data.access_token}` } })
-      )
+      const { data: user } = await api.get('/auth/me', {
+        headers: { Authorization: `Bearer ${data.access_token}` }
+      })
       setAuth(data.access_token, user)
       navigate('/')
     } catch (err: any) {
