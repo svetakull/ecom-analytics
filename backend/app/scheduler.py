@@ -604,6 +604,43 @@ def _startup_catchup() -> None:
         db.close()
 
 
+def _job_data_completeness_check() -> None:
+    """
+    Мониторинг полноты данных — запускается каждые 20 мин с 08:20 до 23:40.
+    Проверяет данные за вчера и позавчера.
+    Если есть пропуски — автоматически дозагружает.
+    """
+    from app.core.database import SessionLocal
+    from app.models.catalog import ChannelType
+    from app.services.data_completeness import check_and_fix_gaps
+
+    db = SessionLocal()
+    try:
+        # Проверяем WB за последние 3 дня
+        results = check_and_fix_gaps(db, days_back=3, channel_type=ChannelType.WB)
+        for r in results:
+            if not r["ok"]:
+                logger.warning(
+                    "data_completeness: %s %s — пропуски: %s, исправление: %s",
+                    r["date"], r["channel"], r["missing"], r.get("fix_result", "")
+                )
+            else:
+                logger.debug("data_completeness: %s %s — ✅ полные данные", r["date"], r["channel"])
+
+        # Проверяем Ozon
+        results_ozon = check_and_fix_gaps(db, days_back=3, channel_type=ChannelType.OZON)
+        for r in results_ozon:
+            if not r["ok"]:
+                logger.warning(
+                    "data_completeness: %s %s — пропуски: %s, исправление: %s",
+                    r["date"], r["channel"], r["missing"], r.get("fix_result", "")
+                )
+    except Exception as e:
+        logger.exception("data_completeness: ошибка проверки — %s", e)
+    finally:
+        db.close()
+
+
 def start_scheduler() -> None:
     # Немедленная проверка при старте — догоняем все пропущенные данные
     scheduler.add_job(
@@ -726,12 +763,22 @@ def start_scheduler() -> None:
         replace_existing=True,
         misfire_grace_time=3600,
     )
+    # ── Мониторинг полноты данных ─────────────────────────────────────────
+    # Каждые 20 мин с 08:20 до 23:40 — проверяет пропуски за 3 дня и дозагружает
+    scheduler.add_job(
+        _job_data_completeness_check,
+        trigger=CronTrigger(hour="8-23", minute="15,35,55", timezone=MSK),
+        id="data_completeness_check",
+        replace_existing=True,
+        misfire_grace_time=600,
+    )
     scheduler.start()
     logger.info(
         "scheduler: started — WB: stocks 00:05, logistics mon 13:00, commission mon 13:30, "
         "orders every 20min 08:00-23:40, prices 08:00, nm-report 09:30 MSK | "
         "Lamoda: orders every 20min, stock 00:10, nomenclatures 08:05 MSK | "
-        "Ozon: orders every 20min 08:10-23:50, stocks 00:15, prices 08:10, ads 10:15/14:15/20:15 MSK"
+        "Ozon: orders every 20min 08:10-23:50, stocks 00:15, prices 08:10, ads 10:15/14:15/20:15 MSK | "
+        "Data completeness check: every 20min 08:15-23:55 MSK"
     )
 
 
