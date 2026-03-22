@@ -27,19 +27,3 @@ def me(current_user: User = Depends(get_current_user)):
     return current_user
 
 
-@router.post("/migrate-data")
-def migrate_data(
-    payload: dict,
-    db: Session = Depends(get_db),
-):
-    """Временный endpoint для миграции данных. Принимает SQL."""
-    sql = payload.get("sql", "")
-    if not sql:
-        raise HTTPException(400, "No SQL provided")
-    try:
-        db.execute(text(sql))
-        db.commit()
-        return {"ok": True, "length": len(sql)}
-    except Exception as e:
-        db.rollback()
-        return {"ok": False, "error": str(e)[:500]}
