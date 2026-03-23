@@ -30,6 +30,9 @@ CLASSIFICATION_RULES = [
     (r"(?i)подписк[аи]|сервис|saas|crm|erp", "subscriptions", 0.7),
     (r"(?i)командировк|перелёт|гостиниц|отель", "travel", 0.75),
     (r"(?i)курьер|экспресс.*доставк", "courier", 0.75),
+    (r"(?i)перераспределени[ея].*собствен|перевод.*между.*счет|со счёта на счёт", "_transfer", 0.95),
+    (r"(?i)перевод.*денежных.*средств.*на нужды", "_transfer", 0.9),
+    (r"(?i)размещение.*депозит|возврат.*депозит", "_transfer", 0.9),
     (r"(?i)дивиденд|выплат.*учредител", "dividend_investor", 0.8),
     (r"(?i)фулфилмент|\bфф\b|fulfillment", "ff", 0.8),
     (r"(?i)контент|фото.*съёмк|видео.*съёмк|дизайн", "content", 0.7),
@@ -63,9 +66,13 @@ def classify_entries(rows: list[dict]) -> list[dict]:
         description = (row.get("description") or "") + " " + (row.get("counterparty") or "")
         category, confidence = _classify_description(description)
 
-        # Определяем тип: доход или расход
+        # Определяем тип: доход, расход или перевод
         amount = row.get("amount", 0)
-        entry_type = "income" if amount > 0 else "expense"
+        if category == "_transfer":
+            entry_type = "transfer"
+            category = "other"  # переводы не классифицируются как расход
+        else:
+            entry_type = "income" if amount > 0 else "expense"
 
         result.append({
             "date": row.get("date"),
