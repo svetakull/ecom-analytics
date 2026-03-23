@@ -186,7 +186,7 @@ def _sync_to_dds(db: Session, entry: JournalEntry):
     description = entry.counterparty or entry.description or entry.category
 
     dds_entry = DDSManualEntry(
-        date=entry.scheduled_date.replace(day=1),  # 1st of month
+        date=entry.scheduled_date,  # реальная дата операции
         category=entry.category,
         name=ref_name,
         amount=float(entry.amount),
