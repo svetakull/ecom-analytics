@@ -89,7 +89,7 @@ export default function StatementUploadModal({ open, onClose }: Props) {
         entry_type: row.entry_type || (row.amount >= 0 ? 'income' : 'expense'),
         amount: Math.abs(row.amount),
         scheduled_date: row.date,
-        category: editedCategories[row.row_index] ?? row.category || 'other',
+        category: (editedCategories[row.row_index] ?? row.category) || 'other',
         counterparty: row.counterparty,
         description: row.description,
         account_name: preview.filename || 'Банковская выписка',

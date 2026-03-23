@@ -98,7 +98,7 @@ def _parse_xlsx(file_bytes: bytes) -> list[dict]:
     except ImportError:
         raise ImportError("openpyxl is required for xlsx parsing. pip install openpyxl")
 
-    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
 
     all_results = []
     for ws in wb.worksheets:
