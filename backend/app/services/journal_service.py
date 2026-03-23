@@ -12,22 +12,33 @@ from app.models.finance import DDSBalance, DDSManualEntry, JournalEntry, Payment
 
 # --- Категории ДДС (из dds_service) ---
 
-DDS_CATEGORIES = [
-    # Расходы
+DDS_CATEGORIES = sorted([
+    # --- ДОХОДЫ ---
+    {"key": "income_wb", "name": "Доход от ВБ", "section": "income"},
+    {"key": "income_ozon", "name": "Доход от Озон", "section": "income"},
+    {"key": "income_lamoda", "name": "Доход от Ламода", "section": "income"},
+    {"key": "income_site", "name": "Доход от сайта", "section": "income"},
+    {"key": "income_opt", "name": "Доход от опта", "section": "income"},
+    {"key": "income_pvz", "name": "Доход от ПВЗ", "section": "income"},
+    {"key": "mp_payment", "name": "Доход от МП (прочее)", "section": "income"},
+    # --- РАСХОДЫ ---
     {"key": "content", "name": "Контент", "section": "expenses"},
     {"key": "external_ads", "name": "Продвижение внешнее", "section": "expenses"},
     {"key": "buyout_services", "name": "Выкупы-услуги", "section": "expenses"},
     {"key": "buyout_goods", "name": "Выкупы товар", "section": "expenses"},
-    {"key": "salary", "name": "ФОТ", "section": "expenses"},
-    {"key": "salary_manager", "name": "Управляющий", "section": "expenses"},
-    {"key": "salary_employee", "name": "Менеджер", "section": "expenses"},
-    {"key": "salary_smm", "name": "СММ-менеджер", "section": "expenses"},
-    {"key": "salary_reels", "name": "Рилзмейкер", "section": "expenses"},
-    {"key": "outsource", "name": "Аутсорс", "section": "expenses"},
+    {"key": "salary", "name": "ФОТ (общий)", "section": "expenses"},
+    {"key": "salary_manager", "name": "ФОТ управляющий", "section": "expenses"},
+    {"key": "salary_employee", "name": "ФОТ менеджер МП", "section": "expenses"},
+    {"key": "salary_smm", "name": "ФОТ СММ-менеджер", "section": "expenses"},
+    {"key": "salary_reels", "name": "ФОТ рилзмейкер", "section": "expenses"},
+    {"key": "salary_pvz", "name": "ФОТ ПВЗ", "section": "expenses"},
+    {"key": "outsource", "name": "Аутсорс (общий)", "section": "expenses"},
     {"key": "outsource_accountant", "name": "Бухгалтер", "section": "expenses"},
     {"key": "outsource_it", "name": "ИТ-программист", "section": "expenses"},
     {"key": "outsource_other", "name": "Другое (аутсорс)", "section": "expenses"},
     {"key": "warehouse", "name": "Склад", "section": "expenses"},
+    {"key": "rent_pvz", "name": "Аренда ПВЗ", "section": "expenses"},
+    {"key": "pvz", "name": "Расходы ПВЗ", "section": "expenses"},
     {"key": "courier", "name": "Курьерская доставка", "section": "expenses"},
     {"key": "travel", "name": "Командировки", "section": "expenses"},
     {"key": "bank_fees", "name": "Комиссии банков", "section": "expenses"},
@@ -36,31 +47,29 @@ DDS_CATEGORIES = [
     {"key": "education", "name": "Обучение", "section": "expenses"},
     {"key": "subscriptions", "name": "Подписка на сервисы", "section": "expenses"},
     {"key": "new_products", "name": "Новинки", "section": "expenses"},
-    {"key": "pvz", "name": "ПВЗ расходы", "section": "expenses"},
-    # Налоги
+    # --- НАЛОГИ ---
     {"key": "usn", "name": "УСН и взнос 1%", "section": "taxes"},
     {"key": "insurance", "name": "Страховые взносы", "section": "taxes"},
     {"key": "ndfl", "name": "НДФЛ", "section": "taxes"},
-    # Авансы (закупка)
+    {"key": "customs", "name": "Таможенные платежи", "section": "taxes"},
+    # --- АВАНСЫ (ЗАКУПКА) ---
     {"key": "purchase_china", "name": "Закупка Китай", "section": "advances"},
     {"key": "delivery_china", "name": "Доставка Китай", "section": "advances"},
-    {"key": "ff", "name": "ФФ", "section": "advances"},
+    {"key": "ff", "name": "ФФ (фулфилмент)", "section": "advances"},
     {"key": "ff_storage", "name": "Хранение на ФФ", "section": "advances"},
     {"key": "delivery_mp", "name": "Доставка до МП", "section": "advances"},
     {"key": "delivery_rf", "name": "Доставка внутри РФ", "section": "advances"},
-    # Кредиты
+    # --- КРЕДИТЫ ---
     {"key": "wb_deductions", "name": "Удержания ВБ", "section": "credits"},
     {"key": "bank_credit", "name": "Банковские кредиты", "section": "credits"},
     {"key": "credit_interest", "name": "% по кредитам", "section": "credits"},
-    # Дивиденды
+    # --- ДИВИДЕНДЫ ---
     {"key": "dividend_investor", "name": "Инвестор", "section": "dividends"},
     {"key": "dividend_manager", "name": "Управляющий (дивиденды)", "section": "dividends"},
     {"key": "dividend_other", "name": "Прочее (дивиденды)", "section": "dividends"},
-    # Поступления
-    {"key": "mp_payment", "name": "Поступление от МП", "section": "income"},
-    # Прочее
+    # --- ПРОЧЕЕ ---
     {"key": "other", "name": "Прочее", "section": "expenses"},
-]
+], key=lambda x: x["name"])
 
 # Маппинг section для ДДС
 CATEGORY_SECTION_MAP = {cat["key"]: cat["section"] for cat in DDS_CATEGORIES}

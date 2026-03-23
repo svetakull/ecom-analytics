@@ -5,7 +5,7 @@ import DateRangePicker, { type DateRange } from '@/components/DateRangePicker'
 import JournalEntryModal from '@/components/JournalEntryModal'
 import StatementUploadModal from '@/components/StatementUploadModal'
 import { api } from '@/api/client'
-import { Plus, Paperclip, Pencil, Trash2, RefreshCw } from 'lucide-react'
+import { Plus, Paperclip, Camera, Pencil, Trash2, RefreshCw } from 'lucide-react'
 import clsx from 'clsx'
 
 const fmt = (n: number) =>
@@ -171,6 +171,13 @@ export default function JournalPage() {
           >
             <Paperclip size={15} />
             Загрузить выписку
+          </button>
+          <button
+            onClick={() => setUploadOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 bg-white text-sm text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <Camera size={15} />
+            Загрузить чеки
           </button>
         </div>
       </div>

@@ -181,7 +181,8 @@ export default function StatementUploadModal({ open, onClose }: Props) {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".xlsx,.csv"
+                accept=".xlsx,.csv,.png,.jpg,.jpeg,.heic,.webp"
+                multiple
                 onChange={handleFileSelect}
                 className="hidden"
               />
