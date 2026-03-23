@@ -161,7 +161,7 @@ def _try_parse_sber(rows_data: list) -> Optional[list[dict]]:
     headers = rows_data[header_idx]
 
     # Маппим столбцы
-    date_col = debit_col = credit_col = corr_col = None
+    date_col = debit_col = credit_col = corr_col = desc_col = None
     for j, h in enumerate(headers):
         if h is None:
             continue
@@ -173,6 +173,10 @@ def _try_parse_sber(rows_data: list) -> Optional[list[dict]]:
         elif "кредиту" in hl:
             credit_col = j
         elif "корреспондирующий" in hl:
+            corr_col = j
+        elif "назначение" in hl:
+            desc_col = j
+        elif "счет" in hl and "дебет" not in hl and "кредит" not in hl and corr_col is None:
             corr_col = j
 
     if date_col is None or (debit_col is None and credit_col is None):
@@ -212,34 +216,65 @@ def _try_parse_sber(rows_data: list) -> Optional[list[dict]]:
         else:
             amount = -debit  # расход
 
-        # Корр.счёт для классификации
+        # Назначение платежа (столбец 21 в расширенном Сбер формате)
+        description = ""
+        if desc_col is not None and desc_col < len(row) and row[desc_col]:
+            description = str(row[desc_col]).replace("\n", " ").strip()
+
+        # Контрагент — из столбца Счёт (Дебет/Кредит)
+        # В Сбер формате контрагент в многострочной ячейке: Счёт\nИНН\nНазвание
+        counterparty = ""
+        # Для расхода (дебет) контрагент в столбце Кредит (куда ушли деньги)
+        # Для дохода (кредит) контрагент в столбце Дебет (откуда пришли)
+        src_col = corr_col  # fallback
+        if credit > 0 and corr_col is not None:
+            # Доход — контрагент в столбце "Дебет" (col 5 в Сбер)
+            for check_col in range(4, min(8, len(row))):
+                cell = row[check_col] if check_col < len(row) else None
+                if cell and isinstance(cell, str) and "\n" in cell:
+                    lines = cell.split("\n")
+                    if len(lines) >= 3:
+                        counterparty = lines[2].strip()[:100]
+                    break
+        elif debit > 0 and corr_col is not None:
+            # Расход — контрагент в столбце "Кредит" (col 9 в Сбер)
+            for check_col in range(8, min(14, len(row))):
+                cell = row[check_col] if check_col < len(row) else None
+                if cell and isinstance(cell, str) and "\n" in cell:
+                    lines = cell.split("\n")
+                    if len(lines) >= 3:
+                        counterparty = lines[2].strip()[:100]
+                    break
+
+        # Корр.счёт для классификации если нет назначения
         corr_account = ""
         if corr_col is not None and corr_col < len(row) and row[corr_col]:
-            corr_account = str(row[corr_col])
+            raw_corr = str(row[corr_col])
+            corr_account = raw_corr.split("\n")[0].strip() if "\n" in raw_corr else raw_corr
 
-        # Пытаемся определить контрагента по корр.счёту
-        counterparty = ""
-        description = ""
-        if corr_account.startswith("407"):
-            description = "Перевод между счетами / контрагенту"
-        elif corr_account.startswith("408"):
-            description = "Перевод ИП/ООО"
-        elif corr_account.startswith("302") or corr_account.startswith("303"):
-            description = "Банковская операция (МЦС/переводы)"
-        elif corr_account.startswith("454") or corr_account.startswith("455"):
-            description = "Кредит/займ"
-        elif corr_account.startswith("615"):
-            description = "Прочие доходы"
-        elif corr_account.startswith("706"):
-            description = "Банковская комиссия"
-        elif corr_account.startswith("474"):
-            description = "Расчёты с покупателями/поставщиками"
+        if not description:
+            if corr_account.startswith("407"):
+                description = "Перевод контрагенту"
+            elif corr_account.startswith("408"):
+                description = "Перевод ИП/ООО"
+            elif corr_account.startswith("302") or corr_account.startswith("303"):
+                description = "Банковская операция"
+            elif corr_account.startswith("454") or corr_account.startswith("455"):
+                description = "Кредит/займ"
+            elif corr_account.startswith("615"):
+                description = "Прочие доходы"
+            elif corr_account.startswith("706"):
+                description = "Банковская комиссия"
+            elif corr_account.startswith("474"):
+                description = "Расчёты с покупателями"
+            else:
+                description = f"Корр.счёт {corr_account}"
 
         result.append({
             "date": parsed_date.isoformat() if isinstance(parsed_date, date) else parsed_date,
             "amount": amount,
             "counterparty": counterparty,
-            "description": description or f"Корр.счёт {corr_account}",
+            "description": description,
         })
 
     return result
@@ -395,12 +430,17 @@ def _parse_row(row, col_map: dict) -> Optional[dict]:
 
 def _parse_date(value) -> Optional[date]:
     """Парсит дату из различных форматов."""
-    if isinstance(value, (date, datetime)):
-        return value if isinstance(value, date) else value.date()
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
     if not value:
         return None
 
     s = str(value).strip()
+    # Обрезаем время если есть (2026-01-04 12:54:31 → 2026-01-04)
+    if " " in s:
+        s = s.split(" ")[0]
     for fmt in ["%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%Y.%m.%d"]:
         try:
             return datetime.strptime(s, fmt).date()
