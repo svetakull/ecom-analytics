@@ -266,10 +266,10 @@ export default function JournalPage() {
                       <span
                         className={clsx(
                           'inline-block px-2 py-0.5 rounded-full text-xs font-medium',
-                          TYPE_COLORS[entry.entry_type]
+                          TYPE_COLORS[entry.entry_type as EntryType]
                         )}
                       >
-                        {TYPE_LABELS[entry.entry_type]}
+                        {TYPE_LABELS[entry.entry_type as EntryType]}
                       </span>
                     </td>
                     <td
