@@ -16,6 +16,7 @@ import {
   ChevronDown,
   Calendar,
   Scale,
+  BookOpen,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -67,6 +68,12 @@ const NAV_GROUPS: NavGroup[] = [
     icon: <Wallet size={18} />,
     roles: ['owner', 'finance_manager'],
     items: [
+      {
+        path: '/journal',
+        label: 'Журнал операций',
+        icon: <BookOpen size={16} />,
+        roles: ['owner', 'finance_manager'],
+      },
       {
         path: '/opiu',
         label: 'ОПиУ',

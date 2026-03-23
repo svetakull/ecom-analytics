@@ -76,6 +76,31 @@ class PaymentCalendarEntry(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class JournalEntry(Base):
+    """Журнал операций — центральное место для внесения расходных/доходных/переводных операций."""
+    __tablename__ = "journal_entries"
+
+    id = Column(Integer, primary_key=True)
+    entry_type = Column(String(10), nullable=False)             # 'expense' | 'income' | 'transfer'
+    amount = Column(Numeric(14, 2), nullable=False)             # сумма с НДС
+    nds_amount = Column(Numeric(14, 2), default=0)              # сумма НДС (отдельно)
+    is_recurring = Column(Boolean, default=False)               # разовая / регулярная
+    recurrence_rule = Column(String(20), nullable=True)         # 'monthly' | 'weekly'
+    recurrence_day = Column(Integer, nullable=True)             # число месяца (1-28) или день недели (1-7)
+    scheduled_date = Column(Date, nullable=True)                # дата операции (для разовых)
+    backfill_from = Column(Date, nullable=True)                 # создать за прошлый период (опционально)
+    account_name = Column(String(100), nullable=False)          # из DDSBalance.account_name
+    category = Column(String(100), nullable=True)               # статья расходов/доходов
+    counterparty = Column(String(200), nullable=True)           # контрагент
+    description = Column(Text, nullable=True)                   # описание
+    is_distributed = Column(Boolean, default=False)             # распределить расход
+    is_official = Column(Boolean, default=False)                # официальный расход
+    channel_id = Column(Integer, ForeignKey("channels.id"), nullable=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class BalanceSheetManualEntry(Base):
     """Ручные записи управленческого баланса."""
     __tablename__ = "balance_sheet_entries"
