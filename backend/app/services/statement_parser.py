@@ -34,6 +34,7 @@ CLASSIFICATION_RULES = [
     (r"(?i)YANDEX.*GO|яндекс.*го|yandex.*taxi", "travel", 0.85),  # такси → командировка
     (r"(?i)MKEEPER|мкипер", "subscriptions", 0.9),  # сервисы
     (r"(?i)ROSTELECOM|ростелеком", "pvz", 0.85),  # видеонаблюдение ПВЗ
+    (r"(?i)PURCHASE_CB|покупка.*purchase", "other", 0.5),  # покупки по карте (не закупка Китай!)
 
     # === МП по названиям ===
     (r"(?i)wildberries|вайлдберриз|\bвб\b", "mp_payment", 0.9),
