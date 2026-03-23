@@ -12,10 +12,11 @@ interface PreviewRow {
   description: string
   category: string
   auto_classified: boolean
+  entry_type: string
 }
 
 interface PreviewData {
-  upload_id: string
+  filename: string
   rows: PreviewRow[]
   total_rows: number
   auto_classified_count: number
@@ -49,11 +50,27 @@ export default function StatementUploadModal({ open, onClose }: Props) {
     mutationFn: async (f: File) => {
       const formData = new FormData()
       formData.append('file', f)
-      return api
-        .post('/journal/upload-statement', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        })
-        .then((r) => r.data as PreviewData)
+      const resp = await api.post('/journal/upload-statement', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      const raw = resp.data
+      // Map API response to PreviewData
+      const rows: PreviewRow[] = (raw.entries || []).map((e: any, i: number) => ({
+        row_index: i,
+        date: e.date || '',
+        amount: e.amount || 0,
+        counterparty: e.counterparty || '',
+        description: e.description || '',
+        category: e.auto_category || '',
+        auto_classified: !!(e.auto_category && e.confidence !== 'none'),
+        entry_type: e.entry_type || 'expense',
+      }))
+      return {
+        filename: raw.filename || f.name,
+        rows,
+        total_rows: raw.total_rows || rows.length,
+        auto_classified_count: rows.filter((r: PreviewRow) => r.auto_classified).length,
+      } as PreviewData
     },
     onSuccess: (data) => {
       setPreview(data)
@@ -66,16 +83,19 @@ export default function StatementUploadModal({ open, onClose }: Props) {
   })
 
   const confirmMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!preview) return Promise.reject()
-      const rows = preview.rows.map((row) => ({
-        ...row,
-        category: editedCategories[row.row_index] ?? row.category,
+      const entries = preview.rows.map((row) => ({
+        entry_type: row.entry_type || (row.amount >= 0 ? 'income' : 'expense'),
+        amount: Math.abs(row.amount),
+        scheduled_date: row.date,
+        category: editedCategories[row.row_index] ?? row.category || 'other',
+        counterparty: row.counterparty,
+        description: row.description,
+        account_name: preview.filename || 'Банковская выписка',
+        is_recurring: false,
       }))
-      return api.post('/journal/upload-confirm', {
-        upload_id: preview.upload_id,
-        rows,
-      })
+      return api.post('/journal/upload-confirm', { entries })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['journal'] })
