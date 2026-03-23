@@ -250,17 +250,17 @@ export default function StatementUploadModal({ open, onClose }: Props) {
                           <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{row.date}</td>
                           <td
                             className={clsx(
-                              'px-3 py-2 text-right tabular-nums whitespace-nowrap',
-                              row.amount < 0 ? 'text-red-600' : 'text-emerald-600'
+                              'px-3 py-2 text-right tabular-nums whitespace-nowrap font-medium',
+                              row.entry_type === 'expense' ? 'text-red-600' : 'text-emerald-600'
                             )}
                           >
-                            {fmt(row.amount)} ₽
+                            {row.entry_type === 'expense' ? '−' : '+'}{fmt(Math.abs(row.amount))} ₽
                           </td>
-                          <td className="px-3 py-2 text-gray-700 truncate max-w-[160px]">
-                            {row.counterparty}
+                          <td className="px-3 py-2 text-gray-700 max-w-[180px]" title={row.counterparty}>
+                            <div className="line-clamp-2 text-xs">{row.counterparty}</div>
                           </td>
-                          <td className="px-3 py-2 text-gray-500 truncate max-w-[200px]">
-                            {row.description}
+                          <td className="px-3 py-2 text-gray-500 min-w-[250px]" title={row.description}>
+                            <div className="line-clamp-2 text-xs leading-relaxed">{row.description}</div>
                           </td>
                           <td className="px-3 py-2">
                             <select
