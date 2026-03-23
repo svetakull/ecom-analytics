@@ -235,7 +235,7 @@ export default function StatementUploadModal({ open, onClose }: Props) {
                     </tr>
                   </thead>
                   <tbody>
-                    {preview.rows.map((row) => {
+                    {(preview.rows || []).map((row) => {
                       const currentCat = editedCategories[row.row_index] ?? row.category
                       const isAuto =
                         row.auto_classified && !(row.row_index in editedCategories)

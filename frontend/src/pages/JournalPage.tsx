@@ -114,7 +114,7 @@ export default function JournalPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['journal'] }),
   })
 
-  const entries = data?.items || []
+  const entries = Array.isArray(data) ? data : (data?.items || [])
 
   // Summary calculations
   const summary = useMemo(() => {
