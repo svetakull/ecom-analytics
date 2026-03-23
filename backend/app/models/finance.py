@@ -1,8 +1,8 @@
-"""Финансовые модели: ОПиУ (P&L), ДДС (Cash Flow) и т.д."""
+"""Финансовые модели: ОПиУ (P&L), ДДС (Cash Flow), Платёжный календарь, Управленческий баланс."""
 from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -54,3 +54,38 @@ class DDSBalance(Base):
     amount = Column(Numeric(14, 2), nullable=False, default=0)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
+
+
+class PaymentCalendarEntry(Base):
+    """Запись платёжного календаря — плановый/фактический платёж."""
+    __tablename__ = "payment_calendar_entries"
+
+    id = Column(Integer, primary_key=True)
+    entry_type = Column(String(10), nullable=False)  # "inflow" / "outflow"
+    category = Column(String(50), nullable=False)     # wb_payment, salary, usn, nds, rent, purchase, credit, other
+    name = Column(String(200), nullable=False)
+    amount = Column(Numeric(14, 2), nullable=False, default=0)
+    scheduled_date = Column(Date, nullable=False)     # когда ожидается платёж
+    is_recurring = Column(Boolean, default=False)     # повторяющийся
+    recurrence_rule = Column(String(20), nullable=True)  # weekly, biweekly, monthly, quarterly
+    channel_id = Column(Integer, ForeignKey("channels.id"), nullable=True)
+    is_auto = Column(Boolean, default=False)          # авто-рассчитанный (из API данных)
+    is_confirmed = Column(Boolean, default=False)     # оплачен/получен
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class BalanceSheetManualEntry(Base):
+    """Ручные записи управленческого баланса."""
+    __tablename__ = "balance_sheet_entries"
+
+    id = Column(Integer, primary_key=True)
+    date = Column(Date, nullable=False)
+    category = Column(String(50), nullable=False)     # ff_stock, charter_capital, supplier_payable, bank_loan, etc.
+    name = Column(String(200), nullable=False)
+    amount = Column(Numeric(14, 2), nullable=False, default=0)
+    section = Column(String(20), nullable=False)      # assets, liabilities, equity
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

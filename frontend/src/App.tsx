@@ -10,6 +10,8 @@ import OPiUPage from '@/pages/OPiUPage'
 import SverkaPage from '@/pages/SverkaPage'
 import ElasticityPage from '@/pages/ElasticityPage'
 import DDSPage from '@/pages/DDSPage'
+import PaymentCalendarPage from '@/pages/PaymentCalendarPage'
+import BalanceSheetPage from '@/pages/BalanceSheetPage'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.token)
@@ -34,6 +36,8 @@ export default function App() {
           <Route path="otsifrovka" element={<OtsifrovkaPage />} />
           <Route path="opiu" element={<OPiUPage />} />
           <Route path="dds" element={<DDSPage />} />
+          <Route path="payment-calendar" element={<PaymentCalendarPage />} />
+          <Route path="balance-sheet" element={<BalanceSheetPage />} />
           <Route path="sales" element={<SalesPage />} />
           <Route path="sverka" element={<SverkaPage />} />
           <Route path="elasticity" element={<ElasticityPage />} />

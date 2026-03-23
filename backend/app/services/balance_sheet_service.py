@@ -1,0 +1,233 @@
+"""Управленческий баланс — snapshot активов, пассивов, капитала."""
+from collections import defaultdict
+from datetime import date
+from typing import Optional
+
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
+from app.models.catalog import Channel, ChannelType
+from app.models.finance import BalanceSheetManualEntry, DDSBalance
+from app.models.inventory import SKUCostHistory, Stock
+from app.models.sales import SkuDailyExpense
+
+
+def _cogs_map(db: Session, as_of: date) -> dict[int, float]:
+    """SKU ID → себестоимость за единицу."""
+    rows = db.query(SKUCostHistory).filter(SKUCostHistory.effective_from <= as_of).order_by(
+        SKUCostHistory.sku_id, SKUCostHistory.effective_from.desc()
+    ).all()
+    result = {}
+    for r in rows:
+        if r.sku_id not in result:
+            result[r.sku_id] = float(r.cost_per_unit)
+    return result
+
+
+def _stock_snapshot(db: Session, as_of: date) -> dict:
+    """Остатки на дату: qty, in_way_to, in_way_from по SKU."""
+    last_date = db.query(func.max(Stock.date)).filter(Stock.date <= as_of).scalar()
+    if not last_date:
+        return {"qty": {}, "in_way_to": {}, "in_way_from": {}}
+
+    rows = db.query(
+        Stock.sku_id,
+        func.sum(Stock.qty).label("qty"),
+        func.sum(Stock.in_way_to_client).label("to_client"),
+        func.sum(Stock.in_way_from_client).label("from_client"),
+    ).filter(Stock.date == last_date).group_by(Stock.sku_id).all()
+
+    qty, to_cl, from_cl = {}, {}, {}
+    for r in rows:
+        qty[r.sku_id] = int(r.qty or 0)
+        to_cl[r.sku_id] = int(r.to_client or 0)
+        from_cl[r.sku_id] = int(r.from_client or 0)
+    return {"qty": qty, "in_way_to": to_cl, "in_way_from": from_cl}
+
+
+def _cash_balances(db: Session, as_of: date) -> dict[str, float]:
+    """Остатки по счетам."""
+    last_date = db.query(func.max(DDSBalance.date)).filter(DDSBalance.date <= as_of).scalar()
+    if not last_date:
+        return {}
+    rows = db.query(DDSBalance.account_name, DDSBalance.amount).filter(DDSBalance.date == last_date).all()
+    return {r.account_name: float(r.amount) for r in rows}
+
+
+def _mp_receivables(db: Session, as_of: date) -> dict[str, float]:
+    """Дебиторская задолженность МП (неоплаченный ppvz_for_pay за последние 4 недели)."""
+    from datetime import timedelta
+    delays = {"wb": 28, "ozon": 24, "lamoda": 8}
+    result = {}
+    type_map = {"wb": ChannelType.WB, "ozon": ChannelType.OZON, "lamoda": ChannelType.LAMODA}
+
+    for mp, delay_days in delays.items():
+        ct = type_map.get(mp)
+        ch = db.query(Channel).filter(Channel.type == ct).first() if ct else None
+        if not ch:
+            continue
+        # Неоплаченное = ppvz_for_pay за последние delay_days дней
+        cutoff = as_of - timedelta(days=delay_days)
+        total = db.query(func.sum(SkuDailyExpense.ppvz_for_pay)).filter(
+            SkuDailyExpense.channel_id == ch.id,
+            SkuDailyExpense.date > cutoff,
+            SkuDailyExpense.date <= as_of,
+        ).scalar()
+        result[mp] = float(total or 0)
+    return result
+
+
+def _retained_earnings(db: Session, as_of: date) -> float:
+    """Нераспределённая прибыль = кумулятивная чистая прибыль."""
+    row = db.query(
+        func.sum(SkuDailyExpense.compensation - SkuDailyExpense.commission
+                 - SkuDailyExpense.logistics - SkuDailyExpense.storage
+                 - SkuDailyExpense.advertising - SkuDailyExpense.subscription
+                 - SkuDailyExpense.reviews - SkuDailyExpense.other_deductions
+                 - SkuDailyExpense.penalty - SkuDailyExpense.acceptance
+                 - SkuDailyExpense.acquiring)
+    ).filter(SkuDailyExpense.date <= as_of).scalar()
+    gross = float(row or 0)
+    # Минус примерная себестоимость (items_count × avg COGS ~900)
+    items = db.query(func.sum(SkuDailyExpense.items_count - SkuDailyExpense.return_count)).filter(
+        SkuDailyExpense.date <= as_of).scalar()
+    items = int(items or 0)
+    cogs_estimate = items * 900  # средняя себестоимость
+    return gross - cogs_estimate
+
+
+def _calc_section(db: Session, as_of: date, cogs: dict, stocks: dict) -> dict:
+    """Рассчитать все секции баланса."""
+    # --- АКТИВЫ ---
+    assets_lines = []
+
+    # 1. Денежные средства
+    cash = _cash_balances(db, as_of)
+    total_cash = sum(cash.values())
+    assets_lines.append({"key": "cash", "name": "Денежные средства", "amount": round(total_cash, 2), "source": "auto", "editable": False, "level": 0, "bold": True})
+    for acc, amt in sorted(cash.items()):
+        assets_lines.append({"key": f"cash_{acc}", "name": acc, "amount": round(amt, 2), "source": "auto", "editable": True, "level": 1, "bold": False})
+
+    # 2. Товары на складах МП
+    stock_value = sum(stocks["qty"].get(sid, 0) * cogs.get(sid, 0) for sid in set(stocks["qty"]) | set(cogs))
+    assets_lines.append({"key": "stock_mp", "name": "Товары на складах МП", "amount": round(stock_value, 2), "source": "auto", "editable": False, "level": 0, "bold": False})
+
+    # 3. В пути к клиенту
+    transit_to = sum(stocks["in_way_to"].get(sid, 0) * cogs.get(sid, 0) for sid in set(stocks["in_way_to"]) | set(cogs))
+    assets_lines.append({"key": "in_transit_to", "name": "Товары в пути к клиенту", "amount": round(transit_to, 2), "source": "auto", "editable": False, "level": 0, "bold": False})
+
+    # 4. В пути от клиента (возвраты)
+    transit_from = sum(stocks["in_way_from"].get(sid, 0) * cogs.get(sid, 0) for sid in set(stocks["in_way_from"]) | set(cogs))
+    assets_lines.append({"key": "in_transit_from", "name": "Товары в пути (возвраты)", "amount": round(transit_from, 2), "source": "auto", "editable": False, "level": 0, "bold": False})
+
+    # 5. Дебиторская задолженность МП
+    receivables = _mp_receivables(db, as_of)
+    total_recv = sum(receivables.values())
+    assets_lines.append({"key": "receivables", "name": "Дебиторская задолженность МП", "amount": round(total_recv, 2), "source": "auto", "editable": False, "level": 0, "bold": True})
+    for mp, amt in receivables.items():
+        label = {"wb": "WB", "ozon": "Ozon", "lamoda": "Lamoda"}.get(mp, mp)
+        assets_lines.append({"key": f"recv_{mp}", "name": f"в т.ч. {label}", "amount": round(amt, 2), "source": "auto", "editable": False, "level": 1, "bold": False})
+
+    # 6. Ручные активы
+    manual_assets = db.query(BalanceSheetManualEntry).filter(
+        BalanceSheetManualEntry.section == "assets",
+        BalanceSheetManualEntry.date <= as_of,
+    ).order_by(BalanceSheetManualEntry.date.desc()).all()
+    # Берём последние по каждой категории
+    seen_cats = set()
+    for e in manual_assets:
+        if e.category not in seen_cats:
+            seen_cats.add(e.category)
+            assets_lines.append({"key": f"manual_{e.category}", "name": e.name, "amount": float(e.amount), "source": "manual", "editable": True, "level": 0, "bold": False, "entry_id": e.id})
+
+    total_assets = total_cash + stock_value + transit_to + transit_from + total_recv + sum(float(e.amount) for e in manual_assets if e.category in seen_cats)
+    assets_lines.append({"key": "total_assets", "name": "ИТОГО АКТИВЫ", "amount": round(total_assets, 2), "source": "auto", "editable": False, "level": 0, "bold": True})
+
+    # --- ПАССИВЫ ---
+    liabilities_lines = []
+    total_liabilities = 0.0
+
+    manual_liab = db.query(BalanceSheetManualEntry).filter(
+        BalanceSheetManualEntry.section == "liabilities",
+        BalanceSheetManualEntry.date <= as_of,
+    ).order_by(BalanceSheetManualEntry.date.desc()).all()
+    seen_cats = set()
+    for e in manual_liab:
+        if e.category not in seen_cats:
+            seen_cats.add(e.category)
+            liabilities_lines.append({"key": f"liab_{e.category}", "name": e.name, "amount": float(e.amount), "source": "manual", "editable": True, "level": 0, "bold": False, "entry_id": e.id})
+            total_liabilities += float(e.amount)
+
+    liabilities_lines.append({"key": "total_liabilities", "name": "ИТОГО ПАССИВЫ", "amount": round(total_liabilities, 2), "source": "auto", "editable": False, "level": 0, "bold": True})
+
+    # --- КАПИТАЛ ---
+    equity_lines = []
+    total_equity = 0.0
+
+    # Ручной уставный капитал
+    manual_eq = db.query(BalanceSheetManualEntry).filter(
+        BalanceSheetManualEntry.section == "equity",
+        BalanceSheetManualEntry.date <= as_of,
+    ).order_by(BalanceSheetManualEntry.date.desc()).all()
+    seen_cats = set()
+    for e in manual_eq:
+        if e.category not in seen_cats:
+            seen_cats.add(e.category)
+            equity_lines.append({"key": f"eq_{e.category}", "name": e.name, "amount": float(e.amount), "source": "manual", "editable": True, "level": 0, "bold": False, "entry_id": e.id})
+            total_equity += float(e.amount)
+
+    # Нераспределённая прибыль
+    retained = _retained_earnings(db, as_of)
+    equity_lines.append({"key": "retained_earnings", "name": "Нераспределённая прибыль", "amount": round(retained, 2), "source": "auto", "editable": False, "level": 0, "bold": False})
+    total_equity += retained
+
+    equity_lines.append({"key": "total_equity", "name": "ИТОГО КАПИТАЛ", "amount": round(total_equity, 2), "source": "auto", "editable": False, "level": 0, "bold": True})
+
+    return {
+        "assets": {"lines": assets_lines, "total": round(total_assets, 2)},
+        "liabilities": {"lines": liabilities_lines, "total": round(total_liabilities, 2)},
+        "equity": {"lines": equity_lines, "total": round(total_equity, 2)},
+    }
+
+
+def get_balance_sheet(
+    db: Session,
+    as_of_date: Optional[date] = None,
+    compare_date: Optional[date] = None,
+) -> dict:
+    """Управленческий баланс на дату с опциональным сравнением."""
+    if not as_of_date:
+        as_of_date = date.today()
+
+    cogs = _cogs_map(db, as_of_date)
+    stocks = _stock_snapshot(db, as_of_date)
+    main = _calc_section(db, as_of_date, cogs, stocks)
+
+    # Сравнение
+    if compare_date:
+        cogs2 = _cogs_map(db, compare_date)
+        stocks2 = _stock_snapshot(db, compare_date)
+        comp = _calc_section(db, compare_date, cogs2, stocks2)
+        # Добавляем compare_amount к main lines
+        for section_key in ("assets", "liabilities", "equity"):
+            comp_map = {l["key"]: l["amount"] for l in comp[section_key]["lines"]}
+            for line in main[section_key]["lines"]:
+                line["compare_amount"] = comp_map.get(line["key"], 0)
+
+    total_assets = main["assets"]["total"]
+    total_le = main["liabilities"]["total"] + main["equity"]["total"]
+    imbalance = round(total_assets - total_le, 2)
+
+    return {
+        "as_of_date": as_of_date.isoformat(),
+        "compare_date": compare_date.isoformat() if compare_date else None,
+        "sections": [
+            {"key": "assets", "name": "АКТИВЫ", "lines": main["assets"]["lines"]},
+            {"key": "liabilities", "name": "ПАССИВЫ", "lines": main["liabilities"]["lines"]},
+            {"key": "equity", "name": "КАПИТАЛ", "lines": main["equity"]["lines"]},
+        ],
+        "balanced": abs(imbalance) < 1,
+        "imbalance": imbalance,
+        "total_assets": total_assets,
+        "total_liabilities_equity": round(total_le, 2),
+    }

@@ -14,6 +14,8 @@ import {
   Settings,
   LogOut,
   ChevronDown,
+  Calendar,
+  Scale,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -77,7 +79,18 @@ const NAV_GROUPS: NavGroup[] = [
         icon: <Wallet size={16} />,
         roles: ['owner', 'finance_manager'],
       },
-      // Будущие: Платёжный календарь, Упр.баланс, ФЭМ
+      {
+        path: '/payment-calendar',
+        label: 'Плат. календарь',
+        icon: <Calendar size={16} />,
+        roles: ['owner', 'finance_manager'],
+      },
+      {
+        path: '/balance-sheet',
+        label: 'Упр. баланс',
+        icon: <Scale size={16} />,
+        roles: ['owner', 'finance_manager'],
+      },
     ],
   },
   {
