@@ -105,7 +105,13 @@ def _parse_xlsx(file_bytes: bytes) -> list[dict]:
     if not rows_data:
         return []
 
-    # Найти заголовки
+    # Сначала проверим формат СберБизнес
+    sber = _try_parse_sber(rows_data)
+    if sber is not None:
+        wb.close()
+        return sber
+
+    # Стандартный парсинг
     header_row = _find_header_row(rows_data)
     if header_row is None:
         return []
@@ -120,6 +126,112 @@ def _parse_xlsx(file_bytes: bytes) -> list[dict]:
             result.append(parsed)
 
     wb.close()
+    return result
+
+
+def _try_parse_sber(rows_data: list) -> Optional[list[dict]]:
+    """
+    Парсит формат СберБизнес.
+    Шапка: Дата | ВО | Номер | ... | БИК | Корр.счёт | Сумма по дебету | Сумма по кредиту
+    Без назначения платежа и контрагента.
+    """
+    # Ищем строку с "Сумма по дебету"
+    header_idx = None
+    for i, row in enumerate(rows_data[:25]):
+        if not row:
+            continue
+        row_text = " ".join(str(c).lower() for c in row if c)
+        if "сумма по дебету" in row_text and "сумма по кредиту" in row_text:
+            header_idx = i
+            break
+
+    if header_idx is None:
+        return None  # не формат Сбер
+
+    headers = rows_data[header_idx]
+
+    # Маппим столбцы
+    date_col = debit_col = credit_col = corr_col = None
+    for j, h in enumerate(headers):
+        if h is None:
+            continue
+        hl = str(h).lower().strip()
+        if "дата" in hl and date_col is None:
+            date_col = j
+        elif "дебету" in hl:
+            debit_col = j
+        elif "кредиту" in hl:
+            credit_col = j
+        elif "корреспондирующий" in hl:
+            corr_col = j
+
+    if date_col is None or (debit_col is None and credit_col is None):
+        return None
+
+    # Ищем входящий остаток
+    opening_balance = 0.0
+    for i, row in enumerate(rows_data[:header_idx]):
+        row_text = " ".join(str(c).lower() for c in row if c)
+        if "входящий остаток" in row_text:
+            for c in row:
+                if isinstance(c, (int, float)) and c > 0:
+                    opening_balance = float(c)
+                    break
+
+    result = []
+    for row in rows_data[header_idx + 1:]:
+        if not row:
+            continue
+
+        # Дата
+        raw_date = row[date_col] if date_col < len(row) else None
+        parsed_date = _parse_date(raw_date)
+        if not parsed_date:
+            continue
+
+        # Дебет / Кредит
+        debit = _parse_amount(row[debit_col] if debit_col is not None and debit_col < len(row) else None)
+        credit = _parse_amount(row[credit_col] if credit_col is not None and credit_col < len(row) else None)
+
+        if not debit and not credit:
+            continue
+
+        # Дебет = расход (списание), Кредит = доход (поступление)
+        if credit > 0:
+            amount = credit  # доход
+        else:
+            amount = -debit  # расход
+
+        # Корр.счёт для классификации
+        corr_account = ""
+        if corr_col is not None and corr_col < len(row) and row[corr_col]:
+            corr_account = str(row[corr_col])
+
+        # Пытаемся определить контрагента по корр.счёту
+        counterparty = ""
+        description = ""
+        if corr_account.startswith("407"):
+            description = "Перевод между счетами / контрагенту"
+        elif corr_account.startswith("408"):
+            description = "Перевод ИП/ООО"
+        elif corr_account.startswith("302") or corr_account.startswith("303"):
+            description = "Банковская операция (МЦС/переводы)"
+        elif corr_account.startswith("454") or corr_account.startswith("455"):
+            description = "Кредит/займ"
+        elif corr_account.startswith("615"):
+            description = "Прочие доходы"
+        elif corr_account.startswith("706"):
+            description = "Банковская комиссия"
+        elif corr_account.startswith("474"):
+            description = "Расчёты с покупателями/поставщиками"
+
+        result.append({
+            "date": parsed_date.isoformat() if isinstance(parsed_date, date) else parsed_date,
+            "amount": amount,
+            "counterparty": counterparty,
+            "description": description or f"Корр.счёт {corr_account}",
+        })
+
     return result
 
 
