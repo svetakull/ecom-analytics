@@ -143,7 +143,7 @@ export default function StatementUploadModal({ open, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] flex flex-col mx-4">
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-5 pb-3 shrink-0">
           <h2 className="text-lg font-bold text-gray-900">Загрузить банковскую выписку</h2>
