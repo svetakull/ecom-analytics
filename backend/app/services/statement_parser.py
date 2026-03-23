@@ -99,34 +99,44 @@ def _parse_xlsx(file_bytes: bytes) -> list[dict]:
         raise ImportError("openpyxl is required for xlsx parsing. pip install openpyxl")
 
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
-    ws = wb.active
-    rows_data = list(ws.iter_rows(values_only=True))
 
-    if not rows_data:
-        return []
+    all_results = []
+    for ws in wb.worksheets:
+        rows_data = list(ws.iter_rows(values_only=True))
+        if not rows_data:
+            continue
 
-    # Сначала проверим формат СберБизнес
-    sber = _try_parse_sber(rows_data)
-    if sber is not None:
-        wb.close()
-        return sber
+        # Определяем валюту листа (пропускаем юаневые счета)
+        sheet_text = " ".join(str(c) for row in rows_data[:6] for c in row if c)
+        if "Китайский юань" in sheet_text or "CNY" in sheet_text:
+            continue  # юаневые операции пока пропускаем
 
-    # Стандартный парсинг
-    header_row = _find_header_row(rows_data)
-    if header_row is None:
-        return []
+        # Пропускаем пустые листы (только ИТОГО)
+        data_rows = [r for r in rows_data[7:] if r and any(c for c in r)]
+        if len(data_rows) <= 1:
+            continue
 
-    headers = rows_data[header_row]
-    col_map = _map_columns(headers)
+        # Сначала проверим формат СберБизнес
+        sber = _try_parse_sber(rows_data)
+        if sber is not None:
+            all_results.extend(sber)
+            continue
 
-    result = []
-    for row in rows_data[header_row + 1:]:
-        parsed = _parse_row(row, col_map)
-        if parsed and parsed.get("amount"):
-            result.append(parsed)
+        # Стандартный парсинг (ВТБ, Тинькофф и др.)
+        header_row = _find_header_row(rows_data)
+        if header_row is None:
+            continue
+
+        headers = rows_data[header_row]
+        col_map = _map_columns(headers)
+
+        for row in rows_data[header_row + 1:]:
+            parsed = _parse_row(row, col_map)
+            if parsed and parsed.get("amount"):
+                all_results.append(parsed)
 
     wb.close()
-    return result
+    return all_results
 
 
 def _try_parse_sber(rows_data: list) -> Optional[list[dict]]:
@@ -319,10 +329,12 @@ def _map_columns(headers) -> dict:
         elif any(kw in hl for kw in ["сумма", "amount", "итого"]):
             if "amount" not in col_map:
                 col_map["amount"] = i
-        elif any(kw in hl for kw in ["дебет", "debit", "приход"]):
-            col_map["debit"] = i
-        elif any(kw in hl for kw in ["кредит", "credit", "расход"]):
-            col_map["credit"] = i
+        elif any(kw in hl for kw in ["дебет", "debit", "приход", "списание"]):
+            if "debit" not in col_map:
+                col_map["debit"] = i
+        elif any(kw in hl for kw in ["кредит", "credit", "расход", "зачисление"]):
+            if "credit" not in col_map:
+                col_map["credit"] = i
         elif any(kw in hl for kw in ["контрагент", "получатель", "плательщик", "counterparty", "наименование"]):
             if "counterparty" not in col_map:
                 col_map["counterparty"] = i
@@ -343,6 +355,12 @@ def _parse_row(row, col_map: dict) -> Optional[dict]:
             return row[idx]
         return None
 
+    # Пропускаем итоговые строки
+    first_cell = str(row[0] if row else "").strip().lower()
+    if first_cell in ("итого:", "итого", "всего", ""):
+        if not any(isinstance(c, (int, float)) and c != 0 for c in row[:2]):
+            pass  # может быть итого с суммами — пропустим ниже по дате
+
     # Date
     raw_date = safe_get(col_map.get("date"))
     parsed_date = _parse_date(raw_date)
@@ -356,7 +374,13 @@ def _parse_row(row, col_map: dict) -> Optional[dict]:
     elif "debit" in col_map and "credit" in col_map:
         debit = _parse_amount(safe_get(col_map["debit"]))
         credit = _parse_amount(safe_get(col_map["credit"]))
-        amount = debit - credit if debit else -credit
+        # Дебет = расход (списание), Кредит = доход (поступление)
+        if credit > 0:
+            amount = credit  # доход — положительная сумма
+        elif debit > 0:
+            amount = -debit  # расход — отрицательная сумма
+        else:
+            amount = 0
 
     counterparty = str(safe_get(col_map.get("counterparty")) or "").strip()
     description = str(safe_get(col_map.get("description")) or "").strip()
