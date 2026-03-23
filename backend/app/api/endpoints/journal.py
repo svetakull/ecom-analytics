@@ -210,3 +210,61 @@ def confirm_upload(
         "created_count": len(created),
         "entries": created,
     }
+
+
+@router.post("/upload-receipts")
+async def upload_receipts(
+    files: List[UploadFile] = File(...),
+    _: User = Depends(get_current_user),
+):
+    """Загрузить скриншоты чеков (1 или несколько). OCR + авто-классификация."""
+    from app.services.receipt_ocr import parse_receipt_image
+    from app.services.statement_parser import classify_entries
+
+    results = []
+    for f in files:
+        if not f.filename:
+            continue
+        contents = await f.read()
+        if not contents:
+            continue
+        try:
+            parsed = parse_receipt_image(contents)
+            # Классифицируем через те же правила
+            classified = classify_entries([{
+                "date": parsed.get("date"),
+                "amount": parsed.get("amount", 0) if parsed.get("entry_type") == "income" else -parsed.get("amount", 0),
+                "counterparty": parsed.get("counterparty", ""),
+                "description": parsed.get("description", ""),
+            }])
+            entry = classified[0] if classified else {}
+            results.append({
+                "filename": f.filename,
+                "date": entry.get("date") or parsed.get("date"),
+                "amount": entry.get("amount", parsed.get("amount", 0)),
+                "counterparty": entry.get("counterparty") or parsed.get("counterparty", ""),
+                "description": entry.get("description") or parsed.get("description", ""),
+                "entry_type": entry.get("entry_type") or parsed.get("entry_type", "expense"),
+                "auto_category": entry.get("auto_category", "other"),
+                "confidence": entry.get("confidence", 0),
+                "bank": parsed.get("bank", "unknown"),
+                "raw_text": parsed.get("raw_text", ""),
+            })
+        except Exception as e:
+            results.append({
+                "filename": f.filename,
+                "error": str(e),
+                "date": None,
+                "amount": 0,
+                "counterparty": "",
+                "description": "",
+                "entry_type": "expense",
+                "auto_category": "other",
+                "confidence": 0,
+                "bank": "unknown",
+            })
+
+    return {
+        "total": len(results),
+        "entries": results,
+    }
