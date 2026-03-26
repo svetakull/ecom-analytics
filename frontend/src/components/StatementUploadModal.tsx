@@ -35,6 +35,7 @@ export default function StatementUploadModal({ open, onClose }: Props) {
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<PreviewData | null>(null)
   const [editedCategories, setEditedCategories] = useState<Record<number, string>>({})
+  const [skippedRows, setSkippedRows] = useState<Set<number>>(new Set())
   const [error, setError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
@@ -85,16 +86,18 @@ export default function StatementUploadModal({ open, onClose }: Props) {
   const confirmMutation = useMutation({
     mutationFn: async () => {
       if (!preview) return Promise.reject()
-      const entries = preview.rows.map((row) => ({
-        entry_type: row.entry_type || (row.amount >= 0 ? 'income' : 'expense'),
-        amount: Math.abs(row.amount),
-        scheduled_date: row.date,
-        category: (editedCategories[row.row_index] ?? row.category) || 'other',
-        counterparty: row.counterparty,
-        description: row.description,
-        account_name: preview.filename || 'Банковская выписка',
-        is_recurring: false,
-      }))
+      const entries = preview.rows
+        .filter((row) => !skippedRows.has(row.row_index))
+        .map((row) => ({
+          entry_type: row.entry_type || (row.amount >= 0 ? 'income' : 'expense'),
+          amount: Math.abs(row.amount),
+          scheduled_date: row.date,
+          category: (editedCategories[row.row_index] ?? row.category) || 'other',
+          counterparty: row.counterparty,
+          description: row.description,
+          account_name: preview.filename || 'Банковская выписка',
+          is_recurring: false,
+        }))
       return api.post('/journal/upload-confirm', { entries })
     },
     onSuccess: () => {
@@ -110,6 +113,7 @@ export default function StatementUploadModal({ open, onClose }: Props) {
     setFile(null)
     setPreview(null)
     setEditedCategories({})
+    setSkippedRows(new Set())
     setError('')
     onClose()
   }
@@ -226,6 +230,9 @@ export default function StatementUploadModal({ open, onClose }: Props) {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-gray-50">
+                      <th className="text-center px-2 py-2 font-medium text-gray-600 w-12">
+                        <span title="Пропустить">✕</span>
+                      </th>
                       <th className="text-left px-3 py-2 font-medium text-gray-600">Дата</th>
                       <th className="text-right px-3 py-2 font-medium text-gray-600">Сумма</th>
                       <th className="text-left px-3 py-2 font-medium text-gray-600">Контрагент</th>
@@ -240,14 +247,31 @@ export default function StatementUploadModal({ open, onClose }: Props) {
                       const currentCat = editedCategories[row.row_index] ?? row.category
                       const isAuto =
                         row.auto_classified && !(row.row_index in editedCategories)
+                      const isSkipped = skippedRows.has(row.row_index)
                       return (
                         <tr
                           key={row.row_index}
                           className={clsx(
                             'border-t border-gray-100',
-                            isAuto ? 'bg-emerald-50/50' : 'bg-amber-50/50'
+                            isSkipped ? 'bg-gray-100 opacity-40' : isAuto ? 'bg-emerald-50/50' : 'bg-amber-50/50'
                           )}
                         >
+                          <td className="px-2 py-2 text-center">
+                            <input
+                              type="checkbox"
+                              checked={isSkipped}
+                              onChange={() => {
+                                setSkippedRows((prev) => {
+                                  const next = new Set(prev)
+                                  if (next.has(row.row_index)) next.delete(row.row_index)
+                                  else next.add(row.row_index)
+                                  return next
+                                })
+                              }}
+                              className="w-4 h-4 rounded border-gray-300 text-red-500 focus:ring-red-400"
+                              title="Пропустить эту операцию"
+                            />
+                          </td>
                           <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{row.date}</td>
                           <td
                             className={clsx(
@@ -304,7 +328,9 @@ export default function StatementUploadModal({ open, onClose }: Props) {
               disabled={confirmMutation.isPending}
               className="px-5 py-2 bg-emerald-600 text-white font-medium rounded-lg text-sm hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
-              {confirmMutation.isPending ? 'Импорт...' : 'Импортировать все'}
+              {confirmMutation.isPending
+                ? 'Импорт...'
+                : `Импортировать ${preview ? preview.rows.length - skippedRows.size : 0} из ${preview?.rows.length || 0}`}
             </button>
           </div>
         )}

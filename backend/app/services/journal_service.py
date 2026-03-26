@@ -21,9 +21,11 @@ DDS_CATEGORIES = sorted([
     {"key": "income_opt", "name": "Доход от опта", "section": "income"},
     {"key": "income_pvz", "name": "Доход от ПВЗ", "section": "income"},
     {"key": "mp_payment", "name": "Доход от МП (прочее)", "section": "income"},
+    {"key": "income_deposit", "name": "Доход от депозита", "section": "income"},
     # --- РАСХОДЫ ---
     {"key": "content", "name": "Контент", "section": "expenses"},
     {"key": "external_ads", "name": "Продвижение внешнее", "section": "expenses"},
+    {"key": "external_ads_site", "name": "Реклама сайта (Яндекс Директ)", "section": "expenses"},
     {"key": "buyout_services", "name": "Выкупы-услуги", "section": "expenses"},
     {"key": "buyout_goods", "name": "Выкупы товар", "section": "expenses"},
     {"key": "salary", "name": "ФОТ (общий)", "section": "expenses"},
