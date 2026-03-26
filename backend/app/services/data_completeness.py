@@ -48,11 +48,19 @@ def check_data_completeness(
     # Для заказов: может быть 0 в выходные, поэтому проверяем через флаг "sync attempted"
     checks = {}
 
-    # Заказы
+    # Заказы — сравниваем с средним за предыдущие 7 дней
     orders_count = db.query(func.count(Order.id)).filter(
         Order.channel_id == ch_id, Order.order_date == target_date
     ).scalar() or 0
-    checks["orders"] = {"count": orders_count, "ok": orders_count > 0}
+    avg_orders_7d = db.query(func.count(Order.id)).filter(
+        Order.channel_id == ch_id,
+        Order.order_date >= target_date - timedelta(days=7),
+        Order.order_date < target_date,
+    ).scalar() or 0
+    avg_orders_day = avg_orders_7d / 7 if avg_orders_7d > 0 else 0
+    # Считаем ОК если есть хотя бы 30% от среднего (или >0 если среднее маленькое)
+    orders_ok = orders_count > 0 if avg_orders_day < 5 else orders_count >= avg_orders_day * 0.3
+    checks["orders"] = {"count": orders_count, "avg_7d": round(avg_orders_day, 1), "ok": orders_ok}
 
     # Цены
     prices_count = db.query(func.count(Price.id)).filter(
@@ -61,10 +69,25 @@ def check_data_completeness(
     checks["prices"] = {"count": prices_count, "ok": prices_count > 0}
 
     # Воронка (CardStats) — просмотры карточек
+    # Проверяем что загружено достаточное кол-во SKU (>50% от активных)
     funnel_count = db.query(func.count(CardStats.id)).filter(
         CardStats.channel_id == ch_id, CardStats.date == target_date
     ).scalar() or 0
-    checks["funnel"] = {"count": funnel_count, "ok": funnel_count > 0}
+    funnel_sku_count = db.query(func.count(func.distinct(CardStats.sku_id))).filter(
+        CardStats.channel_id == ch_id, CardStats.date == target_date
+    ).scalar() or 0
+    # Сравниваем с предыдущим днём (более надёжно чем sku_count)
+    prev_funnel = db.query(func.count(func.distinct(CardStats.sku_id))).filter(
+        CardStats.channel_id == ch_id,
+        CardStats.date == target_date - timedelta(days=1),
+    ).scalar() or 0
+    min_expected = max(prev_funnel * 0.5, 10) if prev_funnel > 0 else sku_count * 0.5
+    checks["funnel"] = {
+        "count": funnel_count,
+        "sku_count": funnel_sku_count,
+        "expected_min": int(min_expected),
+        "ok": funnel_sku_count >= min_expected,
+    }
 
     # Реклама (AdMetrics)
     ads_count = db.query(func.count(AdMetrics.id)).filter(
