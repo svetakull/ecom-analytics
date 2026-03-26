@@ -331,7 +331,27 @@ def sync_paid_storage(db: Session, client: WBClient, days_back: int = 14) -> dic
             ))
             new_rec += 1
 
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        # Retry with merge approach on conflict
+        for (seller_article, cost_date, warehouse_name), agg in aggregated.items():
+            sku = _get_or_create_sku(db, seller_article, agg["nm_id"])
+            existing = (
+                db.query(StorageCost)
+                .filter(StorageCost.sku_id == sku.id, StorageCost.date == cost_date, StorageCost.warehouse_name == warehouse_name)
+                .first()
+            )
+            if existing:
+                existing.cost = round(agg["cost"], 4)
+                existing.qty_on_warehouse = agg["qty"]
+            # skip if not found — was already inserted by another process
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+
     return {"storage_new": new_rec, "storage_updated": updated_rec, "total_raw": len(raw)}
 
 
@@ -1306,7 +1326,7 @@ def run_full_sync(db: Session, integration: Integration, days_back: int = 30) ->
 
     try:
         results["storage"] = sync_paid_storage(db, client, min(days_back, 14))
-    except WBApiError as e:
+    except Exception as e:
         errors.append(f"storage: {e}")
 
     try:
