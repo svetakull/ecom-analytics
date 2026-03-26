@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -79,6 +79,9 @@ class SKUCostHistory(Base):
 class StorageCost(Base):
     """Платное хранение WB: ежедневные расходы по артикулу × склад."""
     __tablename__ = "storage_costs"
+    __table_args__ = (
+        UniqueConstraint("sku_id", "date", "warehouse_name", name="uq_storage_cost_sku_date_wh"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     sku_id: Mapped[int] = mapped_column(ForeignKey("skus.id"), nullable=False)

@@ -305,52 +305,30 @@ def sync_paid_storage(db: Session, client: WBClient, days_back: int = 14) -> dic
     new_rec = 0
     updated_rec = 0
 
+    # Upsert через PostgreSQL ON CONFLICT
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
     for (seller_article, cost_date, warehouse_name), agg in aggregated.items():
         sku = _get_or_create_sku(db, seller_article, agg["nm_id"])
 
-        existing = (
-            db.query(StorageCost)
-            .filter(
-                StorageCost.sku_id == sku.id,
-                StorageCost.date == cost_date,
-                StorageCost.warehouse_name == warehouse_name,
-            )
-            .first()
+        stmt = pg_insert(StorageCost).values(
+            sku_id=sku.id,
+            date=cost_date,
+            warehouse_name=warehouse_name,
+            cost=round(agg["cost"], 4),
+            qty_on_warehouse=agg["qty"],
         )
-        if existing:
-            existing.cost = round(agg["cost"], 4)
-            existing.qty_on_warehouse = agg["qty"]
-            updated_rec += 1
-        else:
-            db.add(StorageCost(
-                sku_id=sku.id,
-                date=cost_date,
-                warehouse_name=warehouse_name,
-                cost=round(agg["cost"], 4),
-                qty_on_warehouse=agg["qty"],
-            ))
-            new_rec += 1
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_storage_cost_sku_date_wh",
+            set_={
+                "cost": round(agg["cost"], 4),
+                "qty_on_warehouse": agg["qty"],
+            },
+        )
+        db.execute(stmt)
+        new_rec += 1
 
-    try:
-        db.commit()
-    except Exception:
-        db.rollback()
-        # Retry with merge approach on conflict
-        for (seller_article, cost_date, warehouse_name), agg in aggregated.items():
-            sku = _get_or_create_sku(db, seller_article, agg["nm_id"])
-            existing = (
-                db.query(StorageCost)
-                .filter(StorageCost.sku_id == sku.id, StorageCost.date == cost_date, StorageCost.warehouse_name == warehouse_name)
-                .first()
-            )
-            if existing:
-                existing.cost = round(agg["cost"], 4)
-                existing.qty_on_warehouse = agg["qty"]
-            # skip if not found — was already inserted by another process
-        try:
-            db.commit()
-        except Exception:
-            db.rollback()
+    db.commit()
 
     return {"storage_new": new_rec, "storage_updated": updated_rec, "total_raw": len(raw)}
 
