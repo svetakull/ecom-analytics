@@ -56,10 +56,27 @@ def _parse_date(s: str) -> Optional[date]:
 
 
 def sync_orders(db: Session, client: WBClient, days_back: int = 30) -> dict:
-    """Синхронизировать заказы за последние N дней."""
+    """Синхронизировать заказы за последние N дней.
+    Два запроса:
+      flag=1 — по дате создания заказа (полнота: все заказы за период)
+      flag=0 — по дате последнего изменения (актуальность: обновления статусов)
+    """
     date_from = date.today() - timedelta(days=days_back)
-    # flag=0: возвращает заказы по дате создания (поле date = реальная дата заказа)
-    raw = client.get_orders(date_from, flag=0)
+    # flag=1: все заказы созданные после dateFrom (полнота)
+    raw_by_creation = client.get_orders(date_from, flag=1)
+    # flag=0: заказы изменённые после dateFrom (статусы отмен)
+    raw_by_update = client.get_orders(date_from, flag=0)
+    # Объединяем: по srid, приоритет flag=0 (свежие статусы)
+    by_srid = {}
+    for item in raw_by_creation:
+        srid = str(item.get("srid") or "")
+        if srid:
+            by_srid[srid] = item
+    for item in raw_by_update:
+        srid = str(item.get("srid") or "")
+        if srid:
+            by_srid[srid] = item  # перезаписываем свежим статусом
+    raw = list(by_srid.values())
     channel = _get_wb_channel(db)
 
     new_orders = 0

@@ -551,7 +551,6 @@ def get_rnp_pivot(
                 Order.sku_id == sku.id,
                 Order.channel_id == channel.id,
                 Order.order_date == d,
-                Order.status != OrderStatus.CANCELLED,
             ).first()
 
             o_qty = int(row_orders[0] or 0)
