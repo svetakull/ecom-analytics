@@ -27,3 +27,21 @@ def me(current_user: User = Depends(get_current_user)):
     return current_user
 
 
+@router.post("/resync-expenses")
+def resync_expenses(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Ресинк финотчёта WB (полный перезалив credit_deduction)."""
+    from app.models.integration import Integration, IntegrationType
+    from app.services.wb_api import WBClient
+    from app.services.wb_sync import sync_wb_expenses
+
+    integration = db.query(Integration).filter(Integration.type == IntegrationType.WB).first()
+    if not integration:
+        raise HTTPException(404, "WB integration not found")
+    client = WBClient(integration.api_key)
+    sync_wb_expenses(db, client, days_back=90)
+    return {"ok": True, "message": "WB expenses resynced (90 days)"}
+
+
