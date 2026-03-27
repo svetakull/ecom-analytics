@@ -523,14 +523,13 @@ def _startup_catchup() -> None:
                 except WBApiError as e:
                     logger.error("startup catchup: WB stocks error — %s", e)
 
-            # 2) nm-report
-            if not db.query(CardStats).filter(CardStats.date == yesterday).first():
-                logger.info("startup catchup: nm-report за %s отсутствует, загружаем", yesterday)
-                try:
-                    client = WBClient(wb.api_key)
-                    sync_nm_report(db, client, days_back=14)
-                except WBApiError as e:
-                    logger.error("startup catchup: nm-report error — %s", e)
+            # 2) nm-report — всегда загружаем за 14 дней (дозаполняет пропуски)
+            logger.info("startup catchup: nm-report за 14 дней")
+            try:
+                client = WBClient(wb.api_key)
+                sync_nm_report(db, client, days_back=14)
+            except WBApiError as e:
+                logger.error("startup catchup: nm-report error — %s", e)
 
             # 3) Полный WB sync (заказы, продажи, цены, реклама) за 2 дня
             logger.info("startup catchup: запуск WB full sync за 2 дня")
@@ -706,13 +705,16 @@ def start_scheduler() -> None:
         replace_existing=True,
         misfire_grace_time=3600,
     )
-    scheduler.add_job(
-        _job_sync_nm_report,
-        trigger=CronTrigger(hour=9, minute=30, timezone=MSK),
-        id="daily_nm_report_sync",
-        replace_existing=True,
-        misfire_grace_time=3600,
-    )
+    # nm-report 3 раза в день: 09:30, 14:00, 20:00 МСК
+    # WB nm-report отдаёт данные с задержкой 2-3 дня, повторные запуски дозаполняют
+    for nm_hour, nm_min, nm_id in [(9, 30, "nm_report_0930"), (14, 0, "nm_report_1400"), (20, 0, "nm_report_2000")]:
+        scheduler.add_job(
+            _job_sync_nm_report,
+            trigger=CronTrigger(hour=nm_hour, minute=nm_min, timezone=MSK),
+            id=nm_id,
+            replace_existing=True,
+            misfire_grace_time=3600,
+        )
     scheduler.add_job(
         _job_lamoda_orders_sync,
         trigger=CronTrigger(hour="8-23", minute="0,20,40", timezone=MSK),
