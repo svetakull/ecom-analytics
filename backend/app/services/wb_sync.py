@@ -876,7 +876,7 @@ def sync_wb_expenses(db: Session, client: WBClient, days_back: int = 14) -> dict
         "penalty": 0.0, "acceptance": 0.0, "other_deductions": 0.0,
         "advertising": 0.0, "other_services": 0.0, "subscription": 0.0, "reviews": 0.0,
         "acquiring": 0.0, "compensation": 0.0, "return_amount": 0.0, "compensation_wb": 0.0,
-        "ppvz_for_pay": 0.0,
+        "ppvz_for_pay": 0.0, "credit_deduction": 0.0,
         "items_count": 0, "return_count": 0,
     }
 
@@ -978,7 +978,7 @@ def sync_wb_expenses(db: Session, client: WBClient, days_back: int = 14) -> dict
             elif "приемка" in bonus or "приёмка" in bonus:
                 entry["acceptance"] += deduction
             elif "заёмщик" in bonus or "займ" in bonus or "кредит" in bonus:
-                pass  # кредит WB — НЕ в ОПиУ
+                entry["credit_deduction"] += deduction  # кредит WB — НЕ в ОПиУ, но в ДДС/дебиторке
             elif "джем" in bonus or "подписк" in bonus:
                 entry["subscription"] += deduction
             elif "отзыв" in bonus:

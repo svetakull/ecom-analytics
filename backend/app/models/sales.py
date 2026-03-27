@@ -106,6 +106,7 @@ class SkuDailyExpense(Base):
     reviews: Mapped[float] = mapped_column(Numeric(12, 2), default=0)            # Отзывы
     compensation_wb: Mapped[float] = mapped_column(Numeric(12, 2), default=0)    # Компенсация от МП (возвраты, лояльность)
     ppvz_for_pay: Mapped[float] = mapped_column(Numeric(12, 2), default=0)      # К перечислению продавцу (ДДС)
+    credit_deduction: Mapped[float] = mapped_column(Numeric(12, 2), default=0) # Удержание кредита (тело, не %)
     return_count: Mapped[int] = mapped_column(Integer, default=0)                # кол-во возвратов
     acquiring: Mapped[float] = mapped_column(Numeric(12, 2), default=0)          # эквайринг
     compensation: Mapped[float] = mapped_column(Numeric(12, 2), default=0)       # реализация = accruals_for_sale (что зачислено продавцу)

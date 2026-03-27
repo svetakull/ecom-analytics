@@ -55,7 +55,10 @@ def _cash_balances(db: Session, as_of: date) -> dict[str, float]:
 
 
 def _mp_receivables(db: Session, as_of: date) -> dict[str, float]:
-    """Дебиторская задолженность МП (неоплаченный ppvz_for_pay за последние 4 недели)."""
+    """Дебиторская задолженность МП = Итого к оплате за неоплаченные недели.
+    Формула: ppvz_for_pay - logistics - storage - acceptance - advertising
+             - subscription - reviews - other_deductions - penalty - credit_deduction
+    Это соответствует колонке "Итого к оплате" в еженедельном финотчёте WB."""
     from datetime import timedelta
     delays = {"wb": 28, "ozon": 24, "lamoda": 8}
     result = {}
@@ -66,14 +69,39 @@ def _mp_receivables(db: Session, as_of: date) -> dict[str, float]:
         ch = db.query(Channel).filter(Channel.type == ct).first() if ct else None
         if not ch:
             continue
-        # Неоплаченное = ppvz_for_pay за последние delay_days дней
         cutoff = as_of - timedelta(days=delay_days)
-        total = db.query(func.sum(SkuDailyExpense.ppvz_for_pay)).filter(
+        row = db.query(
+            func.sum(SkuDailyExpense.ppvz_for_pay).label("ppvz"),
+            func.sum(SkuDailyExpense.logistics).label("logistics"),
+            func.sum(SkuDailyExpense.storage).label("storage"),
+            func.sum(SkuDailyExpense.acceptance).label("acceptance"),
+            func.sum(SkuDailyExpense.advertising).label("advertising"),
+            func.sum(SkuDailyExpense.subscription).label("subscription"),
+            func.sum(SkuDailyExpense.reviews).label("reviews"),
+            func.sum(SkuDailyExpense.other_deductions).label("other_ded"),
+            func.sum(SkuDailyExpense.penalty).label("penalty"),
+            func.sum(SkuDailyExpense.credit_deduction).label("credit"),
+        ).filter(
             SkuDailyExpense.channel_id == ch.id,
             SkuDailyExpense.date > cutoff,
             SkuDailyExpense.date <= as_of,
-        ).scalar()
-        result[mp] = float(total or 0)
+        ).first()
+        if row and row.ppvz:
+            itogo = (
+                float(row.ppvz or 0)
+                - float(row.logistics or 0)
+                - float(row.storage or 0)
+                - float(row.acceptance or 0)
+                - float(row.advertising or 0)
+                - float(row.subscription or 0)
+                - float(row.reviews or 0)
+                - float(row.other_ded or 0)
+                - float(row.penalty or 0)
+                - float(row.credit or 0)
+            )
+            result[mp] = max(itogo, 0)  # дебиторка не может быть отрицательной
+        else:
+            result[mp] = 0.0
     return result
 
 
