@@ -56,8 +56,8 @@ def _cash_balances(db: Session, as_of: date) -> dict[str, float]:
 
 def _mp_receivables(db: Session, as_of: date) -> dict[str, float]:
     """Дебиторская задолженность МП = Итого к оплате за неоплаченные недели.
-    Формула: ppvz_for_pay - logistics - storage - acceptance - advertising
-             - subscription - reviews - other_deductions - penalty - credit_deduction
+    Формула: ppvz_for_pay + compensation_wb - logistics - storage - acceptance
+             - advertising - subscription - reviews - other_deductions - penalty - credit_deduction
     Это соответствует колонке "Итого к оплате" в еженедельном финотчёте WB."""
     from datetime import timedelta
     delays = {"wb": 28, "ozon": 24, "lamoda": 8}
@@ -72,6 +72,7 @@ def _mp_receivables(db: Session, as_of: date) -> dict[str, float]:
         cutoff = as_of - timedelta(days=delay_days)
         row = db.query(
             func.sum(SkuDailyExpense.ppvz_for_pay).label("ppvz"),
+            func.sum(SkuDailyExpense.compensation_wb).label("comp_wb"),
             func.sum(SkuDailyExpense.logistics).label("logistics"),
             func.sum(SkuDailyExpense.storage).label("storage"),
             func.sum(SkuDailyExpense.acceptance).label("acceptance"),
@@ -89,6 +90,7 @@ def _mp_receivables(db: Session, as_of: date) -> dict[str, float]:
         if row and row.ppvz:
             itogo = (
                 float(row.ppvz or 0)
+                + float(row.comp_wb or 0)
                 - float(row.logistics or 0)
                 - float(row.storage or 0)
                 - float(row.acceptance or 0)
