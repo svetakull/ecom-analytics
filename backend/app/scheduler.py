@@ -292,7 +292,7 @@ def _job_sync_prices() -> None:
 
 
 def _job_sync_nm_report() -> None:
-    """Ежедневная синхронизация воронки карточки и рейтингов из WB nm-report (09:30 МСК)."""
+    """Синхронизация воронки карточки и рейтингов из WB nm-report (08:00, 09:00, 12:00 МСК)."""
     from app.core.database import SessionLocal
     from app.services.wb_api import WBClient, WBApiError
     from app.services.wb_sync import sync_nm_report
@@ -705,9 +705,8 @@ def start_scheduler() -> None:
         replace_existing=True,
         misfire_grace_time=3600,
     )
-    # nm-report 3 раза в день: 09:30, 14:00, 20:00 МСК
-    # WB nm-report отдаёт данные с задержкой 2-3 дня, повторные запуски дозаполняют
-    for nm_hour, nm_min, nm_id in [(9, 30, "nm_report_0930"), (14, 0, "nm_report_1400"), (20, 0, "nm_report_2000")]:
+    # nm-report 3 раза в день: 08:00, 09:00, 12:00 МСК
+    for nm_hour, nm_min, nm_id in [(8, 0, "nm_report_0800"), (9, 0, "nm_report_0900"), (12, 0, "nm_report_1200")]:
         scheduler.add_job(
             _job_sync_nm_report,
             trigger=CronTrigger(hour=nm_hour, minute=nm_min, timezone=MSK),
@@ -777,7 +776,7 @@ def start_scheduler() -> None:
     scheduler.start()
     logger.info(
         "scheduler: started — WB: stocks 00:05, logistics mon 13:00, commission mon 13:30, "
-        "orders every 20min 08:00-23:40, prices 08:00, nm-report 09:30 MSK | "
+        "orders every 20min 08:00-23:40, prices 08:00, nm-report 08:00/09:00/12:00 MSK | "
         "Lamoda: orders every 20min, stock 00:10, nomenclatures 08:05 MSK | "
         "Ozon: orders every 20min 08:10-23:50, stocks 00:15, prices 08:10, ads 10:15/14:15/20:15 MSK | "
         "Data completeness check: every 20min 08:15-23:55 MSK"
