@@ -93,7 +93,7 @@ export const sverkaApi = {
 // Аналитика РнП
 export const analyticsApi = {
   dashboard: (params?: { channels?: string[]; article?: string }) =>
-    api.get('/rnp/analytics', { params }),
+    api.get('/rnp/analytics', { params, timeout: 120000 }),
   thresholds: () => api.get('/analytics/thresholds'),
   updateThreshold: (key: string, value: number) =>
     api.patch(`/analytics/thresholds/${key}`, { value }),
