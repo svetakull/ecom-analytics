@@ -3,8 +3,9 @@
  */
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { integrationsApi } from '@/api/endpoints'
-import { Settings, Key, RefreshCw, CheckCircle, AlertCircle, ExternalLink } from 'lucide-react'
+import { integrationsApi, analyticsApi } from '@/api/endpoints'
+import { Settings, Key, RefreshCw, CheckCircle, AlertCircle, ExternalLink, SlidersHorizontal, RotateCcw } from 'lucide-react'
+import type { AnalyticsThreshold } from '@/types'
 
 export default function SettingsPage() {
   const qc = useQueryClient()
@@ -34,6 +35,9 @@ export default function SettingsPage() {
           Нет активных WB интеграций.
         </div>
       )}
+
+      {/* Пороги аналитики */}
+      <ThresholdsSection />
     </div>
   )
 }
@@ -171,6 +175,101 @@ function WbIntegrationCard({ integration, onSaved }: { integration: Integration;
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+function ThresholdsSection() {
+  const qc = useQueryClient()
+  const [editKey, setEditKey] = useState<string | null>(null)
+  const [editVal, setEditVal] = useState('')
+
+  const { data: thresholds = [], isLoading } = useQuery<AnalyticsThreshold[]>({
+    queryKey: ['analytics-thresholds'],
+    queryFn: () => analyticsApi.thresholds().then((r) => r.data),
+  })
+
+  const updateMut = useMutation({
+    mutationFn: ({ key, value }: { key: string; value: number }) =>
+      analyticsApi.updateThreshold(key, value),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['analytics-thresholds'] })
+      setEditKey(null)
+    },
+  })
+
+  const resetMut = useMutation({
+    mutationFn: () => analyticsApi.resetThresholds(),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['analytics-thresholds'] }),
+  })
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gray-50">
+        <div className="flex items-center gap-3">
+          <SlidersHorizontal size={18} className="text-indigo-600" />
+          <div>
+            <div className="font-medium text-gray-900 text-sm">Пороги аналитики РнП</div>
+            <div className="text-xs text-gray-400">Настройка зон и триггеров рекомендаций</div>
+          </div>
+        </div>
+        <button
+          onClick={() => resetMut.mutate()}
+          disabled={resetMut.isPending}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+        >
+          <RotateCcw size={12} className={resetMut.isPending ? 'animate-spin' : ''} />
+          По умолчанию
+        </button>
+      </div>
+
+      {isLoading ? (
+        <div className="p-5 text-sm text-gray-400">Загрузка...</div>
+      ) : (
+        <div className="divide-y divide-gray-100">
+          {thresholds.map((t) => (
+            <div key={t.key} className="flex items-center justify-between px-5 py-3 hover:bg-gray-50">
+              <div className="flex-1 min-w-0">
+                <div className="text-sm text-gray-700">{t.description}</div>
+                <div className="text-[10px] text-gray-400 font-mono">{t.key}</div>
+              </div>
+              {editKey === t.key ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={editVal}
+                    onChange={(e) => setEditVal(e.target.value)}
+                    className="w-20 px-2 py-1 text-sm border border-indigo-300 rounded focus:ring-1 focus:ring-indigo-500"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        updateMut.mutate({ key: t.key, value: parseFloat(editVal) })
+                      }
+                      if (e.key === 'Escape') setEditKey(null)
+                    }}
+                  />
+                  <button
+                    onClick={() => updateMut.mutate({ key: t.key, value: parseFloat(editVal) })}
+                    className="text-xs text-indigo-600 font-medium"
+                  >
+                    OK
+                  </button>
+                  <button onClick={() => setEditKey(null)} className="text-xs text-gray-400">
+                    Отмена
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => { setEditKey(t.key); setEditVal(String(t.value)) }}
+                  className="text-sm font-semibold text-indigo-600 hover:text-indigo-800 min-w-[60px] text-right"
+                >
+                  {t.value}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

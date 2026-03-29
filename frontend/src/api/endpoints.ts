@@ -90,6 +90,16 @@ export const sverkaApi = {
     api.get('/sverka', { params, timeout: 120000 }),
 }
 
+// Аналитика РнП
+export const analyticsApi = {
+  dashboard: (params?: { channels?: string[]; article?: string }) =>
+    api.get('/rnp/analytics', { params }),
+  thresholds: () => api.get('/analytics/thresholds'),
+  updateThreshold: (key: string, value: number) =>
+    api.patch(`/analytics/thresholds/${key}`, { value }),
+  resetThresholds: () => api.post('/analytics/thresholds/reset'),
+}
+
 // Ценовая аналитика
 export const elasticityApi = {
   dashboard: (channel = 'wb', limit = 20) =>

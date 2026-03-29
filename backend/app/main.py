@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.endpoints import auth, balance_sheet, channels, dashboard, dds, elasticity, finance, integrations, journal, opiu, otsifrovka, payment_calendar, rnp, sales, sku, sverka
+from app.api.endpoints import analytics_settings, auth, balance_sheet, channels, dashboard, dds, elasticity, finance, integrations, journal, opiu, otsifrovka, payment_calendar, rnp, sales, sku, sverka
 from app.scheduler import start_scheduler, stop_scheduler
 
 logging.basicConfig(level=logging.INFO)
@@ -43,6 +43,7 @@ app.include_router(elasticity.router, prefix="/api/elasticity", tags=["Цено�
 app.include_router(payment_calendar.router, prefix="/api/payment-calendar", tags=["Платёжный календарь"])
 app.include_router(balance_sheet.router, prefix="/api/balance-sheet", tags=["Управленческий баланс"])
 app.include_router(journal.router, prefix="/api/journal", tags=["Журнал операций"])
+app.include_router(analytics_settings.router, prefix="/api/analytics", tags=["Аналитика РнП"])
 
 
 @app.get("/api/health")

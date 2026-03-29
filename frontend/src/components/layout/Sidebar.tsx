@@ -17,6 +17,7 @@ import {
   Calendar,
   Scale,
   BookOpen,
+  Activity,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -42,6 +43,12 @@ const NAV_GROUPS: NavGroup[] = [
     icon: <BarChart3 size={18} />,
     roles: ['owner', 'mp_manager', 'marketer', 'finance_manager'],
     items: [
+      {
+        path: '/analytics',
+        label: 'Аналитика',
+        icon: <Activity size={16} />,
+        roles: ['owner', 'mp_manager'],
+      },
       {
         path: '/rnp',
         label: 'РнП',

@@ -220,6 +220,118 @@ export interface RnPPivotData {
   skus: RnPPivotSKU[]
 }
 
+// ── Аналитика РнП (зоны, рекомендации) ────────────────────────────────────
+
+export interface AnalyticsPeriodMetrics {
+  orders_qty: number
+  orders_rub: number
+  buyout_rate_pct: number
+  margin_pct: number
+  impressions: number
+  drr_pct: number
+  ad_spend: number
+  cart_from_card_pct: number
+  order_from_cart_pct: number
+}
+
+export interface AnalyticsPeriodDeltas {
+  orders_qty: number   // % change
+  orders_rub: number   // % change
+  buyout_rate_pct: number  // п.п.
+  margin_pct: number       // п.п.
+  drr_pct: number          // п.п.
+  impressions: number      // % change
+}
+
+export interface AnalyticsPeriod {
+  current: AnalyticsPeriodMetrics
+  baseline: AnalyticsPeriodMetrics
+  deltas: AnalyticsPeriodDeltas
+  agg_type: 'day' | 'avg' | 'sum'
+}
+
+export interface MetricZone {
+  metric: 'orders' | 'buyout' | 'margin' | 'traffic' | 'drr'
+  period: 'yesterday' | 'week' | 'month'
+  delta: number
+  zone: 'green' | 'yellow' | 'red'
+}
+
+export interface Recommendation {
+  type: string
+  icon: string
+  title: string
+  description: string
+  severity: 'info' | 'warning' | 'critical'
+  branch?: string
+}
+
+export interface MarginDiagnostic {
+  diagnosis: string
+  title: string
+  description: string
+  linked_rec: string | null
+}
+
+export interface SKUAnalytics {
+  sku_id: number
+  channel_id: number
+  seller_article: string
+  name: string
+  channel_type: string
+  photo_url: string
+  wb_rating: number | null
+  current_stock: number
+  turnover_days: number
+  periods: Record<'yesterday' | 'week' | 'month', AnalyticsPeriod>
+  metrics_zones: MetricZone[]
+  overall_zone: 'green' | 'yellow' | 'red'
+  recommendations: Recommendation[]
+  margin_diagnostic: MarginDiagnostic | null
+  priority_level: number
+}
+
+export interface StoreSummaryPeriod {
+  orders_qty: number
+  orders_rub: number
+  margin_pct: number
+  buyout_pct: number
+  drr_pct: number
+  deltas: {
+    orders_qty: number
+    orders_rub: number
+    margin_pct: number
+    drr_pct: number
+  }
+}
+
+export interface StoreSummary {
+  yesterday: StoreSummaryPeriod
+  week: StoreSummaryPeriod
+  month: StoreSummaryPeriod
+  critical_count: number
+  warning_count: number
+  normal_count: number
+  total_count: number
+}
+
+export interface AnalyticsData {
+  ref_date: string
+  store_summary: StoreSummary
+  critical_skus: SKUAnalytics[]
+  critical_count: number
+  warning_skus: SKUAnalytics[]
+  warning_count: number
+  normal_skus: SKUAnalytics[]
+  normal_count: number
+}
+
+export interface AnalyticsThreshold {
+  key: string
+  value: number
+  description: string
+}
+
 // ── Оцифровка (фактическая P&L-аналитика) ────────────────────────────────
 
 export interface OtsifrovkaRow {

@@ -4,6 +4,7 @@ from app.models.inventory import ProductBatch, Stock, StorageCost
 from app.models.sales import Order, Sale, Return, Price, CardStats
 from app.models.ads import AdCampaign, AdMetrics
 from app.models.integration import Integration
+from app.models.settings import AnalyticsThreshold
 
 __all__ = [
     "User", "AuditLog",
@@ -12,4 +13,5 @@ __all__ = [
     "Order", "Sale", "Return", "Price", "CardStats",
     "AdCampaign", "AdMetrics",
     "Integration",
+    "AnalyticsThreshold",
 ]

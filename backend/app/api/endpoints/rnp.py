@@ -12,6 +12,7 @@ from app.models.user import User
 from app.schemas.rnp import RnPDailyResponse
 from app.services.rnp_service import get_rnp_daily
 from app.services.rnp_pivot_service import get_rnp_pivot
+from app.services.rnp_analytics_service import get_rnp_analytics
 
 router = APIRouter()
 
@@ -48,6 +49,17 @@ def rnp_pivot(
 ):
     """Pivot-данные РнП: каждый SKU × каждый день (формат WB Аналитики)."""
     return get_rnp_pivot(db, date_from=date_from, date_to=date_to, days=days, channels=channels, article=article)
+
+
+@router.get("/analytics")
+def rnp_analytics(
+    channels: Optional[List[str]] = Query(None, description="wb | ozon"),
+    article: Optional[str] = Query(None, description="Фильтр по артикулу"),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Аналитика РнП: зоны, рекомендации, приоритизация SKU."""
+    return get_rnp_analytics(db, channels=channels, article=article)
 
 
 @router.patch("/sku-overrides")

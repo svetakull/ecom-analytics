@@ -13,6 +13,7 @@ import DDSPage from '@/pages/DDSPage'
 import PaymentCalendarPage from '@/pages/PaymentCalendarPage'
 import BalanceSheetPage from '@/pages/BalanceSheetPage'
 import JournalPage from '@/pages/JournalPage'
+import AnalyticsPage from '@/pages/AnalyticsPage'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.token)
@@ -33,6 +34,7 @@ export default function App() {
           }
         >
           <Route index element={<Navigate to="/rnp" replace />} />
+          <Route path="analytics" element={<AnalyticsPage />} />
           <Route path="rnp" element={<RnPPage />} />
           <Route path="otsifrovka" element={<OtsifrovkaPage />} />
           <Route path="journal" element={<JournalPage />} />
