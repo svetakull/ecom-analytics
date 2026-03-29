@@ -1169,7 +1169,16 @@ def sync_nm_report(db: Session, client: WBClient, days_back: int = 14) -> dict:
     # Разбиваем period на окна по 7 дней (ограничение WB /history)
     new_rec = 0
     updated_rec = 0
-    request_count = 0  # счётчик для rate limit (3 req / 20 sec)
+    _last_request_ts: float = 0.0  # время последнего запроса
+
+    def _rate_limit_wait() -> None:
+        """WB rate limit: 1 запрос в 7 сек (безопасный интервал для 3 req/20 sec)."""
+        nonlocal _last_request_ts
+        if _last_request_ts > 0:
+            elapsed = _time.time() - _last_request_ts
+            if elapsed < 7.0:
+                _time.sleep(7.0 - elapsed)
+        _last_request_ts = _time.time()
 
     # Строим список 7-дневных окон от date_from до date_to
     windows: list[tuple[date, date]] = []
@@ -1184,15 +1193,23 @@ def sync_nm_report(db: Session, client: WBClient, days_back: int = 14) -> dict:
         for i in range(0, len(nm_ids), 20):
             chunk = nm_ids[i:i + 20]
 
-            # Rate limit: 3 запроса per 20 sec → пауза каждые 3 запроса
-            if request_count > 0 and request_count % 3 == 0:
-                _time.sleep(22)
+            _rate_limit_wait()
 
-            try:
-                items = client.get_nm_report(chunk, date_from=win_from, date_to=win_to)
-                request_count += 1
-            except WBApiError:
-                request_count += 1
+            items = None
+            for attempt in range(3):
+                try:
+                    items = client.get_nm_report(chunk, date_from=win_from, date_to=win_to)
+                    break
+                except WBApiError as e:
+                    logger.warning(
+                        "nm_report: batch %d/%d window %s–%s attempt %d failed: %s",
+                        i // 20 + 1, (len(nm_ids) + 19) // 20,
+                        win_from, win_to, attempt + 1, e,
+                    )
+                    if attempt < 2:
+                        _time.sleep(25)  # ждём перед ретраем
+                        _last_request_ts = _time.time()
+            if not items:
                 continue
 
             # Новый формат: прямой список [{product: {nmId: N}, history: [...]}]
@@ -1251,9 +1268,7 @@ def sync_nm_report(db: Session, client: WBClient, days_back: int = 14) -> dict:
     # ── 2. Рейтинги из /sales-funnel/products (сводный) ───────────────
     ratings_updated = 0
     try:
-        # rate limit пауза перед сводным запросом
-        if request_count > 0 and request_count % 3 == 0:
-            _time.sleep(22)
+        _rate_limit_wait()
         products_g = client.get_nm_report_grouped(nm_ids, date_from=date_from, date_to=date_to)
         for prod in products_g:
             product_info = prod.get("product") or {}
