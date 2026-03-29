@@ -395,21 +395,44 @@ function SKUCard({ sku }: { sku: SKUAnalytics }) {
                     <td className="py-1.5 pr-3 font-medium text-gray-700">{METRIC_LABELS[metric]}</td>
                     {(['yesterday', 'week', 'month'] as const).map((period) => {
                       const z = zoneMap[metric]?.[period]
-                      if (!z) return <td key={period} className="text-center py-1.5 px-2">—</td>
+                      const p = sku.periods[period]
+                      if (!z || !p) return <td key={period} className="text-center py-1.5 px-2">—</td>
 
                       const isAbsolute = ['buyout', 'margin', 'drr'].includes(metric)
-                      const formatted = isAbsolute ? fmtPP(z.delta) : fmtPct(z.delta)
+                      const deltaFormatted = isAbsolute ? fmtPP(z.delta) : fmtPct(z.delta)
+
+                      // Абсолютное значение текущего периода
+                      const curr = p.current
+                      let valueStr = ''
+                      if (metric === 'orders') {
+                        const qty = Math.round(curr.orders_qty)
+                        const rub = fmtNum(Math.round(curr.orders_rub))
+                        valueStr = `${qty} шт / ${rub}\u20BD`
+                      } else if (metric === 'buyout') {
+                        valueStr = `${fmtNum(curr.buyout_rate_pct, 1)}%`
+                      } else if (metric === 'margin') {
+                        valueStr = `${fmtNum(curr.margin_pct, 1)}%`
+                      } else if (metric === 'traffic') {
+                        valueStr = `${fmtNum(Math.round(curr.impressions))} перех.`
+                      } else if (metric === 'drr') {
+                        valueStr = `${fmtNum(curr.drr_pct, 1)}%`
+                      }
 
                       return (
                         <td key={period} className="py-1.5 px-2">
                           <div className={clsx(
-                            'text-center rounded px-2 py-1 font-medium',
+                            'text-center rounded px-2 py-1',
                             ZONE_BG[z.zone],
-                            z.zone === 'red' ? 'text-red-700' :
-                            z.zone === 'yellow' ? 'text-yellow-700' : 'text-green-700'
                           )}>
-                            <DeltaArrow delta={z.delta} metric={metric} />
-                            {formatted}
+                            <div className="font-semibold text-gray-900 text-[11px]">{valueStr}</div>
+                            <div className={clsx(
+                              'text-[10px] font-medium mt-0.5',
+                              z.zone === 'red' ? 'text-red-600' :
+                              z.zone === 'yellow' ? 'text-yellow-600' : 'text-green-600'
+                            )}>
+                              <DeltaArrow delta={z.delta} metric={metric} />
+                              {deltaFormatted}
+                            </div>
                           </div>
                         </td>
                       )
