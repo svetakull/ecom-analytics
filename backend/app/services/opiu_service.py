@@ -243,10 +243,17 @@ def _build_lines(data: dict, period: str) -> list:
     ebitda = valovaya - opex
 
     # Налоги
-    try:
-        month_date = date.fromisoformat(period + "-01") if period != "total" else None
-    except ValueError:
-        month_date = None
+    month_date = None
+    if period != "total":
+        try:
+            if len(period) == 10:  # "2026-03-23" — недельный формат
+                month_date = date.fromisoformat(period)
+            elif len(period) == 7:  # "2026-03" — месячный формат
+                month_date = date.fromisoformat(period + "-01")
+            elif period.startswith("month:"):  # "month:2026-03"
+                month_date = date.fromisoformat(period[6:] + "-01")
+        except ValueError:
+            month_date = None
 
     # Налоги зависят от периода:
     # 2025: УСН 1%, НДС нет
