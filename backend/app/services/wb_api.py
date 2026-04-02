@@ -435,3 +435,46 @@ class WBClient:
         if isinstance(data, dict) and "data" in data:
             return data["data"]
         return []
+
+    # ─── Габариты и логистика ───
+
+    def get_card_content(self, nm_ids: list[int]) -> list[dict]:
+        """
+        Получить карточки товаров с габаритами через Content API.
+        POST /content/v2/get/cards/list
+        Батч до 100 nmId за запрос.
+        Возвращает список карточек с dimensions (length, width, height).
+        """
+        url = f"{WB_CONTENT}/content/v2/get/cards/list"
+        all_cards = []
+        for i in range(0, len(nm_ids), 100):
+            batch = nm_ids[i:i + 100]
+            payload = {
+                "settings": {
+                    "cursor": {"limit": 100},
+                    "filter": {"withPhoto": -1, "textSearch": "", "tagIDs": []},
+                },
+                "imtIDs": batch,
+            }
+            try:
+                data = self._post(url, payload)
+                cards = data.get("cards", []) if isinstance(data, dict) else []
+                all_cards.extend(cards)
+            except WBApiError:
+                continue
+            if i + 100 < len(nm_ids):
+                time.sleep(1)
+        return all_cards
+
+    def get_warehouse_tariffs(self) -> list[dict]:
+        """
+        Тарифы логистики по складам WB.
+        GET /api/v1/tariffs/box
+        Возвращает: [{warehouseName, boxDeliveryAndStorageExpr, boxDeliveryBase, boxDeliveryLiter, dtNextBox, dtTillMax}]
+        """
+        url = "https://common-api.wildberries.ru/api/v1/tariffs/box"
+        params = {"date": date.today().isoformat()}
+        data = self._get(url, params)
+        if isinstance(data, dict):
+            return data.get("response", {}).get("data", {}).get("warehouseList", [])
+        return []

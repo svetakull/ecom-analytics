@@ -5,6 +5,10 @@ from app.models.sales import Order, Sale, Return, Price, CardStats
 from app.models.ads import AdCampaign, AdMetrics
 from app.models.integration import Integration
 from app.models.settings import AnalyticsThreshold
+from app.models.logistics import (
+    KTRHistory, IRPHistory, WBNomenclatureDimensions, WBCardDimensions,
+    WBWarehouseTariff, LogisticsOperation,
+)
 
 __all__ = [
     "User", "AuditLog",
@@ -14,4 +18,6 @@ __all__ = [
     "AdCampaign", "AdMetrics",
     "Integration",
     "AnalyticsThreshold",
+    "KTRHistory", "IRPHistory", "WBNomenclatureDimensions", "WBCardDimensions",
+    "WBWarehouseTariff", "LogisticsOperation",
 ]

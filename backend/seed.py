@@ -17,6 +17,10 @@ from app.models.catalog import Channel, ChannelType, SKU, SKUChannel, Warehouse,
 from app.models.integration import Integration, IntegrationType, IntegrationStatus
 from app.models.inventory import ProductBatch, Stock
 from app.models.sales import Order, OrderStatus, Price, Return, Sale
+from app.models.logistics import (
+    KTRHistory, IRPHistory, WBCardDimensions, WBNomenclatureDimensions,
+    WBWarehouseTariff, LogisticsOperation,
+)
 from app.models.user import AuditLog, User, UserRole
 
 engine = create_engine(settings.DATABASE_URL)
@@ -326,6 +330,183 @@ def run():
     else:
         key_status = f"ключ установлен ({len(wb_integration.api_key)} символов)" if wb_integration.api_key else "ключ НЕ задан"
         print(f"  WB Integration exists — {key_status}")
+
+    # ── Логистика и габариты (seed) ─────────────────────────────────────────
+    print("\n  Seeding logistics module...")
+
+    # КТР история
+    if db.query(KTRHistory).count() == 0:
+        ktr_periods = [
+            (date(2026, 1, 1), date(2026, 3, 22), 1.25),
+            (date(2026, 3, 23), date(2026, 4, 6), 1.20),
+            (date(2026, 4, 7), date(2026, 6, 30), 1.15),
+        ]
+        for df, dt, val in ktr_periods:
+            db.add(KTRHistory(date_from=df, date_to=dt, value=val))
+        db.flush()
+        print("    KTR history: 3 periods")
+
+    # ИРП история
+    if db.query(IRPHistory).count() == 0:
+        irp_periods = [
+            (date(2026, 3, 23), date(2026, 4, 6), 2.05),
+            (date(2026, 4, 7), date(2026, 6, 30), 2.10),
+        ]
+        for df, dt, val in irp_periods:
+            db.add(IRPHistory(date_from=df, date_to=dt, value=val))
+        db.flush()
+        print("    IRP history: 2 periods")
+
+    # Тарифы складов
+    if db.query(WBWarehouseTariff).count() == 0:
+        wh_tariffs = [
+            ("Коледино", 46.0, 14.0),
+            ("Подольск", 46.0, 14.0),
+            ("Казань", 46.0, 14.0),
+            ("Краснодар", 46.0, 14.0),
+            ("Электросталь", 46.0, 14.0),
+        ]
+        for name, bf, bp in wh_tariffs:
+            db.add(WBWarehouseTariff(warehouse_name=name, base_first_liter=bf, base_per_liter=bp))
+        db.flush()
+        print("    Warehouse tariffs: 5")
+
+    # Габариты карточек и номенклатур
+    sku_dims = [
+        # (seller_article, nm_id, card L,W,H, nom L,W,H)
+        ("HOODIE-BLK-M", 100001, 35, 25, 5, 36, 26, 6),
+        ("HOODIE-BLK-L", 100002, 36, 26, 5, 37, 27, 6),
+        ("HOODIE-WHT-M", 100003, 35, 25, 5, 35, 25, 5),
+        ("HOODIE-WHT-L", 100004, 36, 26, 5, 36, 26, 5),
+        ("TSHIRT-RED-M", 100005, 30, 22, 3, 31, 23, 4),
+        ("TSHIRT-RED-L", 100006, 31, 23, 3, 31, 23, 3),
+        ("TSHIRT-BLU-M", 100007, 30, 22, 3, 30, 22, 3),
+        ("PANTS-BLK-32", 100008, 40, 30, 4, 42, 31, 5),
+        ("PANTS-BLK-34", 100009, 41, 31, 4, 41, 31, 4),
+        ("PANTS-GRY-32", 100010, 40, 30, 4, 40, 30, 4),
+        ("JACKET-BLK-M", 100011, 50, 40, 8, 52, 42, 10),
+        ("JACKET-BLK-L", 100012, 52, 42, 8, 55, 44, 10),
+        ("JACKET-GRN-M", 100013, 50, 40, 8, 50, 40, 8),
+        ("DRESS-PNK-S", 100014, 45, 30, 3, 46, 31, 4),
+        ("DRESS-PNK-M", 100015, 46, 31, 3, 46, 31, 3),
+        ("SNEAKER-WHT-42", 100016, 35, 22, 14, 36, 23, 15),
+        ("SNEAKER-WHT-43", 100017, 36, 23, 14, 36, 23, 14),
+        ("BAG-BRN-L", 100018, 40, 30, 15, 42, 32, 16),
+        ("CAP-BLK", 100019, 25, 20, 12, 25, 20, 12),
+        ("SCARF-RED", 100020, 30, 20, 5, 30, 20, 5),
+    ]
+
+    if db.query(WBCardDimensions).count() == 0:
+        for art, nm_id, cl, cw, ch_val, nl, nw, nh in sku_dims:
+            sku_obj = db.query(SKU).filter(SKU.seller_article == art).first()
+            sku_id = sku_obj.id if sku_obj else None
+            vol_card = (cl * cw * ch_val) / 1000.0
+            vol_nom = (nl * nw * nh) / 1000.0
+            db.add(WBCardDimensions(
+                sku_id=sku_id, nm_id=nm_id,
+                length_cm=cl, width_cm=cw, height_cm=ch_val,
+                volume_liters=vol_card,
+            ))
+            db.add(WBNomenclatureDimensions(
+                sku_id=sku_id, nm_id=nm_id,
+                length_cm=nl, width_cm=nw, height_cm=nh,
+                volume_liters=vol_nom,
+            ))
+        db.flush()
+        print(f"    Dimensions: {len(sku_dims)} cards + nomenclatures")
+
+    # Логистические операции (тестовые)
+    if db.query(LogisticsOperation).count() == 0:
+        from app.services.logistics_calc import (
+            calculate_expected_logistics, reverse_calculate_volume,
+            determine_operation_status, determine_dimensions_status,
+        )
+
+        warehouses_list = ["Коледино", "Подольск", "Казань", "Краснодар", "Электросталь"]
+        op_types = [
+            "К клиенту при продаже",
+            "К клиенту при отмене",
+            "От клиента при возврате",
+            "От клиента при отмене",
+        ]
+
+        op_count = 0
+        for day_offset in range(60):
+            op_date = date(2026, 2, 1) + timedelta(days=day_offset)
+            # 3-5 операций в день
+            for _ in range(rnd.randint(3, 5)):
+                dims = rnd.choice(sku_dims)
+                art, nm_id, cl, cw, ch_val, nl, nw, nh = dims
+                vol_card = (cl * cw * ch_val) / 1000.0
+                vol_nom = (nl * nw * nh) / 1000.0
+                wh = rnd.choice(warehouses_list)
+                ot = rnd.choice(op_types)
+                wh_coef = round(rnd.uniform(0.8, 1.5), 3)
+                supply_num = f"WB-S{rnd.randint(1000, 9999)}"
+
+                # КТР по дате
+                if op_date < date(2026, 3, 23):
+                    ktr = 1.25
+                elif op_date < date(2026, 4, 7):
+                    ktr = 1.20
+                else:
+                    ktr = 1.15
+
+                irp = 2.05 if op_date >= date(2026, 3, 23) else 0.0
+                retail_price = round(rnd.uniform(500, 5000), 2)
+
+                expected = calculate_expected_logistics(
+                    volume=vol_card, warehouse_coef=wh_coef, ktr=ktr,
+                    irp_pct=irp, retail_price=retail_price,
+                    operation_type=ot, operation_date=op_date,
+                    base_first=46.0, base_per=14.0,
+                )
+
+                # Фактическая = ожидаемая + случайное отклонение
+                noise = round(rnd.uniform(-15, 15), 2)
+                actual = round(max(0, expected + noise), 2)
+                diff = round(expected - actual, 2)
+
+                calc_vol = reverse_calculate_volume(
+                    actual_cost=actual, warehouse_coef=wh_coef, ktr=ktr,
+                    irp_pct=irp, retail_price=retail_price,
+                    operation_type=ot, operation_date=op_date,
+                    base_first=46.0, base_per=14.0,
+                )
+
+                sku_obj = db.query(SKU).filter(SKU.seller_article == art).first()
+
+                db.add(LogisticsOperation(
+                    sku_id=sku_obj.id if sku_obj else None,
+                    nm_id=nm_id,
+                    seller_article=art,
+                    operation_type=ot,
+                    warehouse=wh,
+                    supply_number=supply_num,
+                    operation_date=op_date,
+                    warehouse_coef=wh_coef,
+                    ktr_value=ktr,
+                    irp_value=irp,
+                    base_first_liter=46.0,
+                    base_per_liter=14.0,
+                    volume_card_liters=vol_card,
+                    volume_nomenclature_liters=vol_nom,
+                    calculated_wb_volume=round(calc_vol, 4) if calc_vol else 0,
+                    retail_price=retail_price,
+                    expected_logistics=expected,
+                    actual_logistics=actual,
+                    difference=diff,
+                    operation_status=determine_operation_status(expected, actual),
+                    dimensions_status=determine_dimensions_status(vol_nom, vol_card),
+                    volume_difference=round(vol_nom - vol_card, 4),
+                    ktr_needs_check=(date.today() - op_date).days > 98,
+                    tariff_missing=False,
+                    report_id=f"seed-{op_count}",
+                ))
+                op_count += 1
+
+        db.flush()
+        print(f"    Logistics operations: {op_count}")
 
     db.commit()
     print("\n✓ Seed complete!")

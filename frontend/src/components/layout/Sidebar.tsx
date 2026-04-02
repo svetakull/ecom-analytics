@@ -18,6 +18,7 @@ import {
   Scale,
   BookOpen,
   Activity,
+  Ruler,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -119,7 +120,12 @@ const NAV_GROUPS: NavGroup[] = [
         icon: <ClipboardCheck size={16} />,
         roles: ['owner', 'warehouse', 'mp_manager'],
       },
-      // Будущие: Поставки, Учёт остатков
+      {
+        path: '/logistics',
+        label: 'Габариты',
+        icon: <Ruler size={16} />,
+        roles: ['owner', 'mp_manager', 'warehouse'],
+      },
     ],
   },
 ]

@@ -2,6 +2,15 @@ import { api } from './client'
 import type {
   Channel,
   DashboardData,
+  DimensionsComparison,
+  IRPHistoryRecord,
+  KTRHistoryRecord,
+  KTRReferenceRow,
+  LogisticsArticleSummary,
+  LogisticsFilterOptions,
+  LogisticsOperationsResponse,
+  LogisticsSummary,
+  LogisticsSyncResult,
   Order,
   OtsifrovkaData,
   RnPData,
@@ -108,4 +117,68 @@ export const elasticityApi = {
     api.get(`/elasticity/sku/${skuId}`, { params: { channel, spp_pct: sppPct } }),
   forecast: (skuId: number, newPrice: number, channel = 'wb', sppPct?: number) =>
     api.get('/elasticity/forecast', { params: { sku_id: skuId, new_price: newPrice, channel, spp_pct: sppPct } }),
+}
+
+// Логистика и габариты
+export const logisticsApi = {
+  operations: (params: {
+    date_from?: string; date_to?: string; articles?: string[];
+    status?: string; operation_type?: string; warehouse?: string;
+    page?: number; page_size?: number;
+  }) => api.get<LogisticsOperationsResponse>('/logistics/operations', { params }),
+
+  byArticle: (params: {
+    date_from?: string; date_to?: string; articles?: string[]; status?: string;
+  }) => api.get<{ articles: LogisticsArticleSummary[]; total: number }>('/logistics/by-article', { params }),
+
+  summary: (params: {
+    date_from?: string; date_to?: string; articles?: string[];
+  }) => api.get<LogisticsSummary>('/logistics/summary', { params }),
+
+  dimensions: (params?: { articles?: string[]; status?: string }) =>
+    api.get<{ items: DimensionsComparison[]; total: number }>('/logistics/dimensions', { params }),
+
+  sync: (dateFrom: string, dateTo: string, calcMethod = 'card') =>
+    api.post<LogisticsSyncResult>('/logistics/sync', null, {
+      params: { date_from: dateFrom, date_to: dateTo, calc_method: calcMethod },
+      timeout: 120000,
+    }),
+
+  uploadNomenclature: (file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return api.post<LogisticsSyncResult>('/logistics/upload-nomenclature', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+
+  filters: () => api.get<LogisticsFilterOptions>('/logistics/filters'),
+
+  // КТР
+  ktrList: () => api.get<KTRHistoryRecord[]>('/logistics/ktr'),
+  ktrCreate: (data: { date_from: string; date_to: string; value: number }) =>
+    api.post<KTRHistoryRecord>('/logistics/ktr', data),
+  ktrUpdate: (id: number, data: { date_from?: string; date_to?: string; value?: number }) =>
+    api.put<KTRHistoryRecord>(`/logistics/ktr/${id}`, data),
+  ktrDelete: (id: number) => api.delete(`/logistics/ktr/${id}`),
+
+  // ИРП
+  irpList: () => api.get<IRPHistoryRecord[]>('/logistics/irp'),
+  irpCreate: (data: { date_from: string; date_to: string; value: number }) =>
+    api.post<IRPHistoryRecord>('/logistics/irp', data),
+  irpUpdate: (id: number, data: { date_from?: string; date_to?: string; value?: number }) =>
+    api.put<IRPHistoryRecord>(`/logistics/irp/${id}`, data),
+  irpDelete: (id: number) => api.delete(`/logistics/irp/${id}`),
+
+  // Справочник
+  ktrReference: () => api.get<KTRReferenceRow[]>('/logistics/ktr-reference'),
+
+  // Экспорт
+  exportData: (format: 'xlsx' | 'csv', params: {
+    date_from?: string; date_to?: string; articles?: string[];
+    status?: string; operation_type?: string; warehouse?: string;
+  }) => api.get('/logistics/export', {
+    params: { format, ...params },
+    responseType: 'blob',
+  }),
 }

@@ -423,3 +423,126 @@ export interface OtsifrovkaData {
   summary: OtsifrovkaSummary
   rows: OtsifrovkaRow[]
 }
+
+// ── Логистика и габариты ──
+
+export interface LogisticsOperation {
+  id: number
+  seller_article: string
+  nm_id: number
+  operation_type: string
+  warehouse: string
+  supply_number: string
+  operation_date: string
+  coef_fix_start: string | null
+  coef_fix_end: string | null
+  warehouse_coef: number
+  ktr_value: number
+  irp_value: number
+  base_first_liter: number
+  base_per_liter: number
+  volume_card_liters: number
+  volume_nomenclature_liters: number
+  calculated_wb_volume: number
+  retail_price: number
+  expected_logistics: number
+  actual_logistics: number
+  difference: number
+  operation_status: string
+  dimensions_status: string
+  volume_difference: number
+  ktr_needs_check: boolean
+  tariff_missing: boolean
+}
+
+export interface LogisticsOperationsResponse {
+  operations: LogisticsOperation[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface LogisticsArticleSummary {
+  seller_article: string
+  nm_id: number
+  operations_count: number
+  total_expected: number
+  total_actual: number
+  total_difference: number
+  volume_card: number
+  volume_nomenclature: number
+  dimensions_status: string
+  overpay_count: number
+  saving_count: number
+  match_count: number
+}
+
+export interface LogisticsSummary {
+  total_expected: number
+  total_actual: number
+  total_difference: number
+  total_overpay: number
+  total_saving: number
+  articles_total: number
+  articles_overpay: number
+  articles_saving: number
+  articles_match: number
+  current_ktr: number | null
+  current_irp: number | null
+  warnings_count: number
+}
+
+export interface DimensionsComparison {
+  seller_article: string
+  nm_id: number
+  sku_name: string
+  volume_card: number
+  length_card: number
+  width_card: number
+  height_card: number
+  volume_nomenclature: number
+  length_nom: number
+  width_nom: number
+  height_nom: number
+  volume_difference: number
+  dimensions_status: string
+  card_updated_at: string | null
+}
+
+export interface KTRHistoryRecord {
+  id: number
+  date_from: string
+  date_to: string
+  value: number
+  created_at: string
+}
+
+export interface IRPHistoryRecord {
+  id: number
+  date_from: string
+  date_to: string
+  value: number
+  created_at: string
+}
+
+export interface KTRReferenceRow {
+  localization_min: number
+  localization_max: number
+  ktr_before: number
+  ktr_after: number
+  krp_irp: number
+}
+
+export interface LogisticsFilterOptions {
+  warehouses: string[]
+  articles: string[]
+  weeks: string[]
+  operation_types: string[]
+}
+
+export interface LogisticsSyncResult {
+  processed: number
+  updated: number
+  warnings: number
+  error: string | null
+}
