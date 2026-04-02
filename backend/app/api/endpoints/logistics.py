@@ -289,7 +289,7 @@ def get_dimensions(
 def sync_logistics(
     date_from: date = Query(...),
     date_to: date = Query(...),
-    calc_method: str = Query("card", regex="^(card|nomenclature)$"),
+    calc_method: str = Query("card", pattern="^(card|nomenclature)$"),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
@@ -299,23 +299,30 @@ def sync_logistics(
         .first()
     )
     if not integration:
-        raise HTTPException(status_code=404, detail="WB интеграция не найдена")
+        raise HTTPException(status_code=404, detail="WB интеграция не найдена. Добавьте ключ в Настройках.")
+
+    if not integration.api_key:
+        raise HTTPException(status_code=400, detail="API-ключ WB пустой. Заполните в Настройках.")
 
     client = WBClient(integration.api_key)
 
-    # Синхронизируем габариты и тарифы
-    dims_result = sync_card_dimensions(db, client)
-    tariffs_result = sync_warehouse_tariffs(db, client)
+    try:
+        # Синхронизируем габариты и тарифы
+        dims_result = sync_card_dimensions(db, client)
+        tariffs_result = sync_warehouse_tariffs(db, client)
 
-    # Обрабатываем финотчёт
-    report_result = process_financial_report(db, client, date_from, date_to, calc_method)
+        # Обрабатываем финотчёт
+        report_result = process_financial_report(db, client, date_from, date_to, calc_method)
 
-    return SyncResult(
-        processed=report_result.get("processed", 0),
-        updated=dims_result.get("updated", 0),
-        warnings=report_result.get("warnings", 0),
-        error=report_result.get("error") or tariffs_result.get("error"),
-    )
+        return SyncResult(
+            processed=report_result.get("processed", 0),
+            updated=dims_result.get("updated", 0),
+            warnings=report_result.get("warnings", 0),
+            error=report_result.get("error") or tariffs_result.get("error"),
+        )
+    except Exception as e:
+        logger.exception("Ошибка синхронизации логистики")
+        raise HTTPException(status_code=500, detail=f"Ошибка синхронизации: {str(e)[:300]}")
 
 
 @router.post("/upload-nomenclature", response_model=SyncResult)
@@ -462,7 +469,7 @@ def get_ktr_reference(_: User = Depends(get_current_user)):
 
 @router.get("/export")
 def export_data(
-    format: str = Query("xlsx", regex="^(xlsx|csv)$"),
+    format: str = Query("xlsx", pattern="^(xlsx|csv)$"),
     date_from: Optional[date] = Query(None),
     date_to: Optional[date] = Query(None),
     articles: Optional[list[str]] = Query(None),
