@@ -14,6 +14,37 @@ import {
 
 const fmtNum = (n: number, d = 2) => n.toLocaleString('ru-RU', { minimumFractionDigits: d, maximumFractionDigits: d })
 const fmtRub = (n: number) => `${fmtNum(n)} \u20BD`
+const fmtDateRu = (iso: string) => {
+  if (!iso) return ''
+  const [y, m, d] = iso.split('-')
+  return `${d}.${m}.${y}`
+}
+
+/** Последнее воскресенье (включая сегодня, если сегодня вс) */
+function getLastSunday(): Date {
+  const d = new Date()
+  const day = d.getDay() // 0=вс
+  d.setDate(d.getDate() - (day === 0 ? 0 : day))
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+function toISO(d: Date) {
+  return d.toISOString().slice(0, 10)
+}
+
+type PeriodKey = '7d' | '1m' | '3m'
+const PERIOD_LABELS: Record<PeriodKey, string> = { '7d': '7 дней', '1m': 'Месяц', '3m': 'Квартал' }
+
+function calcPeriod(period: PeriodKey): { from: string; to: string } {
+  const lastSun = getLastSunday()
+  const to = toISO(lastSun)
+  const from = new Date(lastSun)
+  if (period === '7d') from.setDate(from.getDate() - 6)
+  else if (period === '1m') from.setMonth(from.getMonth() - 1, from.getDate() + 1)
+  else from.setMonth(from.getMonth() - 3, from.getDate() + 1)
+  return { from: toISO(from), to }
+}
 
 type Tab = 'reports' | 'dimensions'
 type DetailLevel = 'summary' | 'article' | 'operation'
@@ -21,11 +52,37 @@ type DetailLevel = 'summary' | 'article' | 'operation'
 export default function LogisticsPage() {
   const qc = useQueryClient()
 
-  // ── State ──
+  // ── Period State ──
+  const defaultPeriod = calcPeriod('7d')
+  const [periodKey, setPeriodKey] = useState<PeriodKey>('7d')
+  const [dateFrom, setDateFrom] = useState(defaultPeriod.from)
+  const [dateTo, setDateTo] = useState(defaultPeriod.to)
+  const [showCalendar, setShowCalendar] = useState(false)
+
+  const selectPeriod = (key: PeriodKey) => {
+    const p = calcPeriod(key)
+    setPeriodKey(key)
+    setDateFrom(p.from)
+    setDateTo(p.to)
+    setPage(1)
+  }
+
+  const applyCustomDate = (isoDate: string) => {
+    setDateTo(isoDate)
+    // dateFrom остаётся, пересчитаем по текущему периоду
+    const to = new Date(isoDate)
+    const from = new Date(to)
+    if (periodKey === '7d') from.setDate(from.getDate() - 6)
+    else if (periodKey === '1m') from.setMonth(from.getMonth() - 1, from.getDate() + 1)
+    else from.setMonth(from.getMonth() - 3, from.getDate() + 1)
+    setDateFrom(toISO(from))
+    setShowCalendar(false)
+    setPage(1)
+  }
+
+  // ── Other State ──
   const [tab, setTab] = useState<Tab>('reports')
   const [detailLevel, setDetailLevel] = useState<DetailLevel>('article')
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
   const [selectedArticles, setSelectedArticles] = useState<string[]>([])
   const [statusFilter, setStatusFilter] = useState('')
   const [opTypeFilter, setOpTypeFilter] = useState('')
@@ -176,15 +233,47 @@ export default function LogisticsPage() {
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 items-end bg-white rounded-xl border border-gray-200 p-4">
+        {/* Period Selector */}
         <div>
-          <label className="block text-xs text-gray-500 mb-1">С</label>
-          <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1) }}
-            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm" />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">По</label>
-          <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1) }}
-            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm" />
+          <label className="block text-xs text-gray-500 mb-1">Период</label>
+          <div className="flex items-center gap-1">
+            <div className="flex gap-0.5 p-0.5 bg-gray-100 rounded-lg">
+              {(['7d', '1m', '3m'] as PeriodKey[]).map(k => (
+                <button key={k} onClick={() => selectPeriod(k)}
+                  className={clsx('px-3 py-1.5 text-sm rounded-md transition-colors',
+                    periodKey === k ? 'bg-white shadow-sm font-medium text-gray-900' : 'text-gray-500 hover:text-gray-700')}>
+                  {PERIOD_LABELS[k]}
+                </button>
+              ))}
+            </div>
+            <div className="relative ml-1">
+              <button
+                onClick={() => setShowCalendar(!showCalendar)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50"
+              >
+                <span className="text-gray-600">{fmtDateRu(dateFrom)}</span>
+                <span className="text-gray-400">—</span>
+                <span className="text-gray-900 font-medium">{fmtDateRu(dateTo)}</span>
+                <ChevronDown size={14} className="text-gray-400" />
+              </button>
+              {showCalendar && (
+                <div className="absolute top-full mt-1 left-0 z-20 bg-white border border-gray-200 rounded-xl shadow-lg p-3">
+                  <div className="text-xs text-gray-500 mb-2">Отчёт по дату (воскресенье):</div>
+                  <input
+                    type="date"
+                    value={dateTo}
+                    onChange={e => applyCustomDate(e.target.value)}
+                    className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm w-full"
+                  />
+                  <div className="text-[10px] text-gray-400 mt-1.5">
+                    Период {PERIOD_LABELS[periodKey]} до выбранной даты
+                  </div>
+                  <button onClick={() => setShowCalendar(false)}
+                    className="mt-2 w-full text-xs text-gray-500 hover:text-gray-700">Закрыть</button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {filtersData && (
@@ -225,7 +314,7 @@ export default function LogisticsPage() {
 
         <div>
           <label className="block text-xs text-gray-500 mb-1">Метод расчёта</label>
-          <div className="flex gap-1 p-0.5 bg-gray-100 rounded-lg">
+          <div className="flex gap-0.5 p-0.5 bg-gray-100 rounded-lg">
             {([['card', 'По карточке'], ['nomenclature', 'По номенклатуре']] as const).map(([k, l]) => (
               <button key={k} onClick={() => setCalcMethod(k)}
                 className={clsx('px-3 py-1 text-xs rounded-md', calcMethod === k ? 'bg-white shadow-sm font-medium' : 'text-gray-600')}>
