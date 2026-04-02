@@ -260,13 +260,19 @@ def process_financial_report(
         except (ValueError, TypeError):
             continue
 
-        # Коэффициенты из отчёта
-        warehouse_coef = float(row.get("kiz", 1.0) or 1.0)
+        # Коэффициент склада из отчёта (dlv_prc — коэффициент поставки)
+        warehouse_coef = float(row.get("dlv_prc", 1.0) or 1.0)
         # Даты фиксации коэффициента
         coef_fix_start = _parse_date_safe(row.get("fix_tariff_date_from"))
         coef_fix_end = _parse_date_safe(row.get("fix_tariff_date_to"))
 
         retail_price = float(row.get("retail_price_withdisc_rub", 0) or 0)
+
+        # Объём WB из финотчёта (delivery_amount = литры прямой, return_amount = литры обратной)
+        delivery_vol = float(row.get("delivery_amount", 0) or 0)
+        return_vol = float(row.get("return_amount", 0) or 0)
+        # Объём по данным WB (из отчёта) — это фактический замер
+        vol_wb_report = delivery_vol if is_direct_operation(normalized_type) else return_vol
 
         # КТР и ИРП из истории
         ktr_value, ktr_needs_check = get_ktr_for_date(db, op_date)
@@ -282,11 +288,29 @@ def process_financial_report(
         base_first = float(tariff.base_first_liter) if tariff else DEFAULT_BASE_FIRST
         base_per = float(tariff.base_per_liter) if tariff else DEFAULT_BASE_PER
 
-        # Объёмы
+        # Объёмы из разных источников
         card = card_dims.get(nm_id)
-        nom = nom_dims.get(nm_id)
         vol_card = float(card.volume_liters) if card else 0.0
-        vol_nom = float(nom.volume_liters) if nom else 0.0
+        # Объём номенклатуры = объём из финотчёта WB (фактические замеры)
+        vol_nom = vol_wb_report if vol_wb_report > 0 else (
+            float(nom_dims[nm_id].volume_liters) if nm_id in nom_dims else 0.0
+        )
+
+        # Обновляем WBNomenclatureDimensions из данных финотчёта
+        if vol_wb_report > 0:
+            existing_nom = db.query(WBNomenclatureDimensions).filter(
+                WBNomenclatureDimensions.nm_id == nm_id
+            ).first()
+            if existing_nom:
+                existing_nom.volume_liters = vol_wb_report
+                existing_nom.updated_at = datetime.utcnow()
+            else:
+                db.add(WBNomenclatureDimensions(
+                    sku_id=sc_map.get(nm_id),
+                    nm_id=nm_id,
+                    volume_liters=vol_wb_report,
+                    updated_at=datetime.utcnow(),
+                ))
 
         # Выбор объёма для расчёта
         volume = vol_card if calc_method == "card" else vol_nom
