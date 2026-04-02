@@ -12,6 +12,14 @@ logging.basicConfig(level=logging.INFO)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Создаём недостающие таблицы (fallback если alembic не применился)
+    try:
+        from app.core.database import engine, Base
+        import app.models  # noqa: F401
+        Base.metadata.create_all(bind=engine)
+        logging.info("DB tables ensured")
+    except Exception as e:
+        logging.warning(f"create_all skipped: {e}")
     start_scheduler()
     yield
     stop_scheduler()
