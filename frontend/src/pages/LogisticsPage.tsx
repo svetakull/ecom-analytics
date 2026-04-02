@@ -156,23 +156,45 @@ export default function LogisticsPage() {
     enabled: showKTRPanel,
   })
 
+  // ── Sync feedback ──
+  const [syncMsg, setSyncMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+
   // ── Mutations ──
   const syncMut = useMutation({
     mutationFn: () => logisticsApi.sync(dateFrom, dateTo, calcMethod),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['logistics-'] })
+    onSuccess: (resp) => {
+      const d = resp.data
+      qc.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith('logistics') })
+      qc.invalidateQueries({ queryKey: ['ktr-list'] })
+      qc.invalidateQueries({ queryKey: ['irp-list'] })
+      if (d.error) {
+        setSyncMsg({ type: 'err', text: d.error })
+      } else {
+        setSyncMsg({ type: 'ok', text: `Обработано ${d.processed} операций` + (d.warnings ? `, ${d.warnings} предупр.` : '') })
+      }
+      setTimeout(() => setSyncMsg(null), 8000)
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.detail || err?.message || 'Ошибка синхронизации'
+      setSyncMsg({ type: 'err', text: msg })
+      setTimeout(() => setSyncMsg(null), 8000)
     },
   })
 
   const handleExport = async (format: 'xlsx' | 'csv') => {
-    const resp = await logisticsApi.exportData(format, filterParams)
-    const blob = new Blob([resp.data])
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `logistics_report.${format}`
-    a.click()
-    URL.revokeObjectURL(url)
+    try {
+      const resp = await logisticsApi.exportData(format, filterParams)
+      const blob = new Blob([resp.data])
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `logistics_report.${format}`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err: any) {
+      setSyncMsg({ type: 'err', text: 'Ошибка экспорта: ' + (err?.message || 'неизвестная') })
+      setTimeout(() => setSyncMsg(null), 5000)
+    }
   }
 
   const summary: LogisticsSummary = summaryData || {
@@ -333,8 +355,16 @@ export default function LogisticsPage() {
           )}
         >
           <RefreshCw size={14} className={syncMut.isPending ? 'animate-spin' : ''} />
-          Загрузить данные
+          {syncMut.isPending ? 'Загрузка...' : 'Загрузить данные'}
         </button>
+
+        {syncMsg && (
+          <div className={clsx('flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg',
+            syncMsg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200')}>
+            {syncMsg.type === 'ok' ? <Check size={14} /> : <AlertTriangle size={14} />}
+            {syncMsg.text}
+          </div>
+        )}
       </div>
 
       {/* Summary Cards */}
