@@ -155,6 +155,7 @@ const MAIN_METRICS: MetricDef[] = [
   { key: 'profit_total',        label: 'Прогноз. прибыль, ₽',             format: fmtRub,                 aggType: 'sum', colorScale: true },
   { key: 'orders_qty',          label: 'Факт. заказы, шт',                format: fmtNum,                 aggType: 'sum', colorScale: true },
   { key: 'orders_rub',          label: 'Факт. заказы, ₽',                 format: fmtRub,                 aggType: 'sum' },
+  { key: 'buyout_rate_pct',     label: 'Процент выкупа, %',               format: fmtPct,                 aggType: 'avg', editable: 'buyout' },
   { key: 'forecast_sales_qty',  label: 'Прогноз. продажи, шт',            format: (v) => fmtNum(v, 1),    aggType: 'sum' },
   { key: 'forecast_sales_rub',  label: 'Прогноз. продажи до СПП, ₽',     format: fmtRub,                 aggType: 'sum' },
   { key: 'price_before_spp',    label: 'Цена до СПП, ₽',                  format: fmtRub,                 aggType: 'avg' },
@@ -164,7 +165,6 @@ const MAIN_METRICS: MetricDef[] = [
   { key: 'in_way_to_client',    label: 'В пути до получателей, шт',       format: fmtNum,                 aggType: 'last' },
   { key: 'in_way_from_client',  label: 'В пути возвраты на склад, шт',    format: fmtNum, inverseGood:true, aggType: 'last' },
   { key: 'frozen_capital',      label: 'Заморожен. капитал, ₽',           format: fmtRub, inverseGood:true, aggType: 'last' },
-  { key: 'buyout_rate_pct',     label: 'Процент выкупа, %',               format: fmtPct,                 aggType: 'avg', editable: 'buyout' },
   { key: 'drr_orders_pct',      label: 'ДРР по заказам, %',               format: fmtPct, inverseGood:true, aggType: 'avg' },
   { key: 'drr_sales_pct',       label: 'ДРР по продажам, %',              format: fmtPct, inverseGood:true, aggType: 'avg' },
 ]
