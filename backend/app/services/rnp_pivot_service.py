@@ -310,6 +310,42 @@ def _build_price_map(db: Session, sku_id: int, channel_id: int, start: date, end
     return result
 
 
+def _build_price_after_map(db: Session, sku_id: int, channel_id: int, start: date, end: date) -> dict:
+    """
+    Возвращает dict {date: price_after_spp} из таблицы prices.
+    Backward/forward fill аналогично _build_price_map.
+    """
+    rows = (
+        db.query(Price.date, Price.price_after_spp)
+        .filter(Price.sku_id == sku_id, Price.channel_id == channel_id, Price.price_after_spp > 0)
+        .order_by(Price.date.asc())
+        .all()
+    )
+    if not rows:
+        return {}
+    known = {r[0]: float(r[1]) for r in rows}
+    result = {}
+    all_dates = sorted(known.keys())
+    for d in (start + timedelta(days=i) for i in range((end - start).days + 1)):
+        if d in known:
+            result[d] = known[d]
+        else:
+            best = None
+            for kd in all_dates:
+                if kd <= d:
+                    best = known[kd]
+                else:
+                    break
+            if best is None:
+                for kd in all_dates:
+                    if kd > d:
+                        best = known[kd]
+                        break
+            if best is not None:
+                result[d] = best
+    return result
+
+
 def _build_card_stats_map(db: Session, sku_id: int, channel_id: int, start: date, end: date) -> dict:
     """
     Возвращает dict {date: {"open_card": N, "add_to_cart": N, "orders": N}}
@@ -511,6 +547,7 @@ def get_rnp_pivot(
         # Цены продавца из WB Prices API (discountedPrice = «Цена со скидкой» = «Цена до СПП»)
         # Приоритет над Order.price (priceWithDisc), который занижается авто-акциями WB
         price_map = _build_price_map(db, sku.id, channel.id, min(day_list), ref_date)
+        price_map_after = _build_price_after_map(db, sku.id, channel.id, min(day_list), ref_date)
 
         # Средняя стоимость хранения за 14 дней из отчёта платного хранения
         avg_storage_real = _avg_storage_cost_per_unit(db, sku.id, ref_date, 14)
@@ -597,9 +634,6 @@ def get_rnp_pivot(
             in_way_to = stock_data["in_way_to_client"]
             in_way_from = stock_data["in_way_from_client"]
 
-            # p_after = finishedPrice (цена покупателя) — всегда из Order.price_after_spp
-            p_after = avg_price_after if avg_price_after > 0 else (o_rub / o_qty if o_qty else 0)
-
             # p_before = «Цена до СПП» / «Цена со скидкой продавца» (WB Analytics)
             # Приоритет источников:
             # 1) WB Prices API discountedPrice (price_map) — самый точный
@@ -616,6 +650,25 @@ def get_rnp_pivot(
             elif avg_price_before > 0:
                 p_before = avg_price_before
             else:
+                p_before = 0
+
+            # p_after = finishedPrice (цена покупателя)
+            # Приоритет: 1) Order.price_after_spp за день
+            #            2) Рассчитать из p_before × (1 - avg_spp/100)
+            #            3) Последнее известное значение из Price table
+            p_after = avg_price_after if avg_price_after > 0 else (o_rub / o_qty if o_qty else 0)
+
+            if p_after == 0 and p_before > 0:
+                # Нет заказов за день — вычисляем из цены до СПП и среднего СПП
+                if avg_spp > 0:
+                    p_after = round(p_before * (1 - avg_spp / 100), 2)
+                else:
+                    # Ищем последнюю известную цену после СПП из Price table
+                    _price_rec = price_map_after.get(d)
+                    if _price_rec and _price_rec > 0:
+                        p_after = _price_rec
+
+            if p_before == 0 and p_after > 0:
                 p_before = p_after  # крайний запасной вариант
 
             spp = avg_spp
