@@ -416,7 +416,7 @@ function AdSection({ sku, days }: { sku: RnPPivotSKU; days: string[] }) {
         onClick={() => setOpen(v => !v)}
       >
         <td className="px-4 py-2 sticky left-0 bg-white z-10 border-r border-gray-100">
-          <div className="flex items-center gap-2 font-semibold text-gray-500">
+          <div className="flex items-center gap-2 font-semibold text-gray-900">
             <span className={`transition-transform ${open ? 'rotate-90' : ''} inline-block`}>▶</span>
             <span className="text-orange-600">📢</span>
             Бюджет РК, ₽
