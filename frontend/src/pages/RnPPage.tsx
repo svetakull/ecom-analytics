@@ -285,12 +285,12 @@ const AD_METRICS_6: AdMetricDef[] = [
   { key: 'ctr',         label: 'CTR, %',              format: fmtPct2, aggType: 'avg' },
   { key: 'cpc',         label: 'CPC, ₽',              format: fmtRub,  aggType: 'avg', inverseGood: true },
   { key: 'cpm',         label: 'CPM, ₽',              format: fmtRub,  aggType: 'avg', inverseGood: true },
+  { key: 'cpo_ad',    label: 'СРО (рекл. заказы), ₽', format: fmtRub,  aggType: 'avg', inverseGood: true },
 ]
 
 // Дополнительные метрики в итоговой строке (скрыты по умолчанию, без разбивки)
 const AD_METRICS_EXTRA: AdMetricDef[] = [
   { key: 'cpo_all',  label: 'СРО (все заказы), ₽',    format: fmtRub, aggType: 'avg', inverseGood: true },
-  { key: 'cpo_ad',   label: 'СРО (рекл. заказы), ₽',  format: fmtRub, aggType: 'avg', inverseGood: true },
   { key: 'cr',       label: 'CR (рекл.), %',            format: fmtPct, aggType: 'avg' },
 ]
 
