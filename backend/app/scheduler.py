@@ -292,8 +292,15 @@ def _job_sync_prices() -> None:
 
 
 def _job_sync_nm_report() -> None:
-    """Синхронизация воронки карточки и рейтингов из WB nm-report (08:00, 09:00, 12:00 МСК)."""
+    """
+    Синхронизация воронки карточки из WB nm-report.
+    Запускается каждые 20 минут с 08:00 до 12:00 МСК.
+    Проверяет полноту: если за вчера < 80% SKU — дозагружает за 14 дней.
+    """
     from app.core.database import SessionLocal
+    from app.models.sales import CardStats
+    from app.models.catalog import ChannelType, Channel, SKUChannel
+    from sqlalchemy import func
     from app.services.wb_api import WBClient, WBApiError
     from app.services.wb_sync import sync_nm_report
 
@@ -301,12 +308,33 @@ def _job_sync_nm_report() -> None:
     try:
         integration = _wb_integration(db)
         if not integration:
-            logger.warning("nm_report_sync: WB интеграция не найдена, пропуск")
             return
+
+        yesterday = date.today() - timedelta(days=1)
+        ch = db.query(Channel).filter(Channel.type == ChannelType.WB).first()
+        if not ch:
+            return
+
+        # Проверяем полноту: сколько SKU имеют card_stats за вчера
+        expected = db.query(func.count(SKUChannel.id)).filter(
+            SKUChannel.channel_id == ch.id, SKUChannel.mp_article.isnot(None)
+        ).scalar() or 0
+        actual = db.query(func.count(func.distinct(CardStats.sku_id))).filter(
+            CardStats.channel_id == ch.id, CardStats.date == yesterday
+        ).scalar() or 0
+
+        if actual >= expected * 0.8:
+            # Данные за вчера полные — пропускаем
+            return
+
+        logger.info(
+            "nm_report_sync: за %s только %d/%d SKU (%.0f%%) — дозагружаем",
+            yesterday, actual, expected, actual / expected * 100 if expected else 0,
+        )
 
         client = WBClient(integration.api_key)
         result = sync_nm_report(db, client, days_back=14)
-        logger.info("nm_report_sync: синхронизация завершена — %s", result)
+        logger.info("nm_report_sync: завершена — %s", result)
     except WBApiError as e:
         logger.error("nm_report_sync: WB API ошибка — %s", e)
     except Exception as e:
@@ -705,15 +733,14 @@ def start_scheduler() -> None:
         replace_existing=True,
         misfire_grace_time=3600,
     )
-    # nm-report 3 раза в день: 08:00, 09:00, 12:00 МСК
-    for nm_hour, nm_min, nm_id in [(8, 0, "nm_report_0800"), (9, 0, "nm_report_0900"), (12, 0, "nm_report_1200")]:
-        scheduler.add_job(
-            _job_sync_nm_report,
-            trigger=CronTrigger(hour=nm_hour, minute=nm_min, timezone=MSK),
-            id=nm_id,
-            replace_existing=True,
-            misfire_grace_time=3600,
-        )
+    # nm-report каждые 20 минут с 08:00 до 12:00 МСК (гарантирует загрузку даже после деплоя)
+    scheduler.add_job(
+        _job_sync_nm_report,
+        trigger=CronTrigger(hour="8-12", minute="0,20,40", timezone=MSK),
+        id="nm_report_periodic",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
     scheduler.add_job(
         _job_lamoda_orders_sync,
         trigger=CronTrigger(hour="8-23", minute="0,20,40", timezone=MSK),
@@ -776,7 +803,7 @@ def start_scheduler() -> None:
     scheduler.start()
     logger.info(
         "scheduler: started — WB: stocks 00:05, logistics mon 13:00, commission mon 13:30, "
-        "orders every 20min 08:00-23:40, prices 08:00, nm-report 08:00/09:00/12:00 MSK | "
+        "orders every 20min 08:00-23:40, prices 08:00, nm-report every 20min 08:00-12:00 MSK | "
         "Lamoda: orders every 20min, stock 00:10, nomenclatures 08:05 MSK | "
         "Ozon: orders every 20min 08:10-23:50, stocks 00:15, prices 08:10, ads 10:15/14:15/20:15 MSK | "
         "Data completeness check: every 20min 08:15-23:55 MSK"
