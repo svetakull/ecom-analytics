@@ -487,12 +487,11 @@ def _audit(
     new_values: dict | None,
     source: str = "ui",
 ):
-    src_map = {"ui": CostPriceAuditSource.UI, "excel_import": CostPriceAuditSource.EXCEL_IMPORT, "api": CostPriceAuditSource.API}
     db.add(CostPriceAudit(
         cost_price_id=cost_price_id,
         user_id=user_id,
-        action=action,
+        action=action.value if hasattr(action, 'value') else str(action),
         old_values=old_values,
         new_values=new_values,
-        source=src_map.get(source, CostPriceAuditSource.UI),
+        source=source,
     ))

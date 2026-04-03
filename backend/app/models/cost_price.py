@@ -64,10 +64,8 @@ class CostPriceAudit(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     cost_price_id: Mapped[int] = mapped_column(Integer, nullable=False)  # может ссылаться на удалённую запись
     user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
-    action: Mapped[CostPriceAuditAction] = mapped_column(Enum(CostPriceAuditAction), nullable=False)
+    action: Mapped[str] = mapped_column(String(10), nullable=False)  # INSERT | UPDATE | DELETE
     old_values: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     new_values: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    source: Mapped[CostPriceAuditSource] = mapped_column(
-        Enum(CostPriceAuditSource), default=CostPriceAuditSource.UI
-    )
+    source: Mapped[str] = mapped_column(String(20), default="ui", nullable=False)  # ui | excel_import | api
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
