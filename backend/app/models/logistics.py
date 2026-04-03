@@ -71,8 +71,7 @@ class WBWarehouseTariff(Base):
 class LogisticsOperation(Base):
     __tablename__ = "logistics_operations"
     __table_args__ = (
-        UniqueConstraint("nm_id", "operation_date", "operation_type", "supply_number",
-                         name="uq_logistics_op"),
+        # report_id из rrd_id финотчёта WB — уникален для каждой строки
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

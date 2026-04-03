@@ -100,13 +100,21 @@ def sync_warehouse_tariffs(db: Session, client: WBClient) -> dict:
         logger.error(f"Ошибка получения тарифов WB: {e}")
         return {"updated": 0, "error": str(e)}
 
+    def _parse_float(val, default=0.0):
+        """Парсинг float из WB API — обрабатывает запятую как десятичный разделитель."""
+        if val is None:
+            return default
+        if isinstance(val, (int, float)):
+            return float(val)
+        return float(str(val).replace(",", ".").strip())
+
     updated = 0
     for t in tariffs:
         name = t.get("warehouseName", "")
         if not name:
             continue
-        base_first = float(t.get("boxDeliveryBase", DEFAULT_BASE_FIRST))
-        base_per = float(t.get("boxDeliveryLiter", DEFAULT_BASE_PER))
+        base_first = _parse_float(t.get("boxDeliveryBase"), DEFAULT_BASE_FIRST)
+        base_per = _parse_float(t.get("boxDeliveryLiter"), DEFAULT_BASE_PER)
 
         existing = db.query(WBWarehouseTariff).filter(WBWarehouseTariff.warehouse_name == name).first()
         if existing:
@@ -329,17 +337,14 @@ def process_financial_report(
             base_per=base_per,
         )
 
-        # Upsert
-        existing = (
-            db.query(LogisticsOperation)
-            .filter(
-                LogisticsOperation.nm_id == nm_id,
-                LogisticsOperation.operation_date == op_date,
-                LogisticsOperation.operation_type == normalized_type,
-                LogisticsOperation.supply_number == supply_number,
-            )
-            .first()
-        )
+        report_id = str(row.get("rrd_id", ""))
+
+        # Upsert по report_id (уникальный ID строки в финотчёте WB)
+        existing = None
+        if report_id:
+            existing = db.query(LogisticsOperation).filter(
+                LogisticsOperation.report_id == report_id
+            ).first()
 
         data = dict(
             sku_id=sc_map.get(nm_id),
@@ -368,7 +373,7 @@ def process_financial_report(
             volume_difference=round(vol_nom - vol_card, 4) if vol_nom and vol_card else 0,
             ktr_needs_check=ktr_needs_check,
             tariff_missing=tariff_missing,
-            report_id=str(row.get("rrd_id", "")),
+            report_id=report_id,
         )
 
         if existing:
@@ -376,6 +381,11 @@ def process_financial_report(
                 setattr(existing, k, v)
         else:
             db.add(LogisticsOperation(**data))
+            try:
+                db.flush()
+            except Exception:
+                db.rollback()
+                continue
 
         processed += 1
         if ktr_needs_check or tariff_missing:
