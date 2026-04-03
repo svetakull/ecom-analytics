@@ -19,6 +19,7 @@ import {
   BookOpen,
   Activity,
   Ruler,
+  DollarSign,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -67,6 +68,12 @@ const NAV_GROUPS: NavGroup[] = [
         label: 'Цены',
         icon: <TrendingDown size={16} />,
         roles: ['owner', 'mp_manager'],
+      },
+      {
+        path: '/cost-prices',
+        label: 'Себестоимость',
+        icon: <DollarSign size={16} />,
+        roles: ['owner', 'finance_manager', 'mp_manager'],
       },
     ],
   },

@@ -75,8 +75,22 @@ def wb_photo_url(nm_id: str) -> str:
     return f"https://basket-{basket}.wbbasket.ru/vol{vol}/part{part}/{nm}/images/tm/1.webp"
 
 
-def _cogs_per_unit(db: Session, sku_id: int, target_date: date = None) -> float:
-    """Себестоимость на ед. — сначала из истории цен, потом из ProductBatch."""
+def _cogs_per_unit(db: Session, sku_id: int, target_date: date = None, channel_id: int = None) -> float:
+    """
+    Себестоимость на ед.
+    Приоритет: 1) cost_prices (новый модуль) → 2) SKUCostHistory → 3) ProductBatch.
+    """
+    # 1) Новый модуль себестоимости (cost_prices)
+    if target_date and channel_id:
+        try:
+            from app.services.cost_price_service import resolve_cogs_per_unit
+            val = resolve_cogs_per_unit(db, sku_id, channel_id, target_date)
+            if val > 0:
+                return val
+        except Exception:
+            pass  # таблица может не существовать — fallback
+
+    # 2) SKUCostHistory (старый модуль)
     if target_date:
         record = (
             db.query(SKUCostHistory)
@@ -86,6 +100,8 @@ def _cogs_per_unit(db: Session, sku_id: int, target_date: date = None) -> float:
         )
         if record:
             return float(record.cost_per_unit)
+
+    # 3) ProductBatch (fallback)
     batch = (
         db.query(ProductBatch)
         .filter(ProductBatch.sku_id == sku_id)
@@ -486,7 +502,7 @@ def get_rnp_pivot(
         sku: SKU = sc.sku
         channel: Channel = sc.channel
 
-        cogs = _cogs_per_unit(db, sku.id, ref_date)
+        cogs = _cogs_per_unit(db, sku.id, ref_date, channel.id)
 
         # Процент выкупа: ручное переопределение → исторические данные 14 дней → дефолт 50%
         buyout_rate_is_manual = sc.buyout_rate_override is not None

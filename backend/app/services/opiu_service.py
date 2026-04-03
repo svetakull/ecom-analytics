@@ -22,7 +22,18 @@ NDS_RATE = 0.05
 USN_RATE = 0.06  # (1% УСН + 5% НДС) = 6% от налоговой базы. До марта 2026 = 1% УСН
 
 
-def _cogs_per_unit(db: Session, sku_id: int, ref_date: date) -> float:
+def _cogs_per_unit(db: Session, sku_id: int, ref_date: date, channel_id: int = None) -> float:
+    """Себестоимость: cost_prices → SKUCostHistory → ProductBatch."""
+    # 1) Новый модуль
+    if channel_id:
+        try:
+            from app.services.cost_price_service import resolve_cogs_per_unit
+            val = resolve_cogs_per_unit(db, sku_id, channel_id, ref_date)
+            if val > 0:
+                return val
+        except Exception:
+            pass
+    # 2) SKUCostHistory
     record = (
         db.query(SKUCostHistory)
         .filter(SKUCostHistory.sku_id == sku_id, SKUCostHistory.effective_from <= ref_date)
@@ -31,6 +42,7 @@ def _cogs_per_unit(db: Session, sku_id: int, ref_date: date) -> float:
     )
     if record:
         return float(record.cost_per_unit)
+    # 3) ProductBatch
     batch = (
         db.query(ProductBatch)
         .filter(ProductBatch.sku_id == sku_id)

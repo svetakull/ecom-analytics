@@ -15,6 +15,7 @@ import BalanceSheetPage from '@/pages/BalanceSheetPage'
 import JournalPage from '@/pages/JournalPage'
 import AnalyticsPage from '@/pages/AnalyticsPage'
 import LogisticsPage from '@/pages/LogisticsPage'
+import CostPricePage from '@/pages/CostPricePage'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.token)
@@ -47,6 +48,7 @@ export default function App() {
           <Route path="sverka" element={<SverkaPage />} />
           <Route path="logistics" element={<LogisticsPage />} />
           <Route path="elasticity" element={<ElasticityPage />} />
+          <Route path="cost-prices" element={<CostPricePage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/rnp" replace />} />
