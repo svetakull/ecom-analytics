@@ -445,7 +445,7 @@ class WBClient:
         Батч до 100 nmId за запрос.
         Возвращает список карточек с dimensions (length, width, height).
         """
-        url = f"{WB_CONTENT}/content/v2/get/cards/list"
+        url = "https://content-api.wildberries.ru/content/v2/get/cards/list"
         all_cards = []
         for i in range(0, len(nm_ids), 100):
             batch = nm_ids[i:i + 100]

@@ -101,12 +101,18 @@ def sync_warehouse_tariffs(db: Session, client: WBClient) -> dict:
         return {"updated": 0, "error": str(e)}
 
     def _parse_float(val, default=0.0):
-        """Парсинг float из WB API — обрабатывает запятую как десятичный разделитель."""
+        """Парсинг float из WB API — обрабатывает запятую и прочерки."""
         if val is None:
             return default
         if isinstance(val, (int, float)):
             return float(val)
-        return float(str(val).replace(",", ".").strip())
+        s = str(val).replace(",", ".").strip()
+        if not s or s == "-" or s == "—":
+            return default
+        try:
+            return float(s)
+        except ValueError:
+            return default
 
     updated = 0
     for t in tariffs:
