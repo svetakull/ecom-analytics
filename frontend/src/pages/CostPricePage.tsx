@@ -23,7 +23,7 @@ interface CostPriceEntry {
   sku_id: number
   channel_id: number
   seller_article: string
-  mp_article: string
+  marketplace_article: string
   marketplace: string
   size: string | null
   cost_price: number
@@ -61,10 +61,41 @@ export default function CostPricePage() {
   /* ── query ── */
   const { data: rows = [], isLoading, isError } = useQuery<CostPriceGroup[]>({
     queryKey: ['cost-prices', marketplace, search],
-    queryFn: () =>
-      api
-        .get('/cost-prices', { params: { marketplace, ...(search ? { article: search } : {}) } })
-        .then((r) => r.data),
+    queryFn: async () => {
+      const { data } = await api.get<CostPriceEntry[]>('/cost-prices', {
+        params: { marketplace, ...(search ? { article: search } : {}) },
+      })
+      // Группируем плоский список по (sku_id, channel_id, size)
+      const map = new Map<string, CostPriceGroup>()
+      for (const e of data) {
+        const key = `${e.sku_id}-${e.channel_id}-${e.size ?? ''}`
+        if (!map.has(key)) {
+          map.set(key, {
+            sku_id: e.sku_id,
+            channel_id: e.channel_id,
+            seller_article: e.seller_article,
+            mp_article: e.marketplace_article || '',
+            marketplace: e.marketplace,
+            size: e.size,
+            default_cost_price: 0,
+            default_fulfillment: 0,
+            default_vat_rate: 0,
+            history_count: 0,
+            entries: [],
+          })
+        }
+        const g = map.get(key)!
+        g.entries.push(e)
+        if (e.is_default) {
+          g.default_cost_price = e.cost_price
+          g.default_fulfillment = e.fulfillment
+          g.default_vat_rate = e.vat_rate
+        } else {
+          g.history_count++
+        }
+      }
+      return Array.from(map.values())
+    },
     staleTime: 30_000,
   })
 
