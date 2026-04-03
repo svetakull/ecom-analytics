@@ -386,11 +386,13 @@ def process_financial_report(
             for k, v in data.items():
                 setattr(existing, k, v)
         else:
-            db.add(LogisticsOperation(**data))
+            # Savepoint чтобы ошибка одной строки не откатывала остальные
+            sp = db.begin_nested()
             try:
-                db.flush()
+                db.add(LogisticsOperation(**data))
+                sp.commit()
             except Exception:
-                db.rollback()
+                sp.rollback()
                 continue
 
         processed += 1
