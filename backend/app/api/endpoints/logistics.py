@@ -305,24 +305,40 @@ def sync_logistics(
         raise HTTPException(status_code=400, detail="API-ключ WB пустой. Заполните в Настройках.")
 
     client = WBClient(integration.api_key)
+    errors = []
 
+    # Шаг 1: Габариты карточек (не блокирует остальное)
     try:
-        # Синхронизируем габариты и тарифы
         dims_result = sync_card_dimensions(db, client)
-        tariffs_result = sync_warehouse_tariffs(db, client)
-
-        # Обрабатываем финотчёт
-        report_result = process_financial_report(db, client, date_from, date_to, calc_method)
-
-        return SyncResult(
-            processed=report_result.get("processed", 0),
-            updated=dims_result.get("updated", 0),
-            warnings=report_result.get("warnings", 0),
-            error=report_result.get("error") or tariffs_result.get("error"),
-        )
     except Exception as e:
-        logger.exception("Ошибка синхронизации логистики")
-        raise HTTPException(status_code=500, detail=f"Ошибка синхронизации: {str(e)[:300]}")
+        logger.warning(f"Габариты карточек: {e}")
+        dims_result = {"updated": 0}
+        errors.append(f"Габариты: {str(e)[:100]}")
+
+    # Шаг 2: Тарифы складов (не блокирует остальное)
+    try:
+        tariffs_result = sync_warehouse_tariffs(db, client)
+    except Exception as e:
+        logger.warning(f"Тарифы складов: {e}")
+        tariffs_result = {}
+        errors.append(f"Тарифы: {str(e)[:100]}")
+
+    # Шаг 3: Финансовый отчёт — основной
+    try:
+        report_result = process_financial_report(db, client, date_from, date_to, calc_method)
+    except Exception as e:
+        logger.exception("Ошибка обработки финотчёта")
+        report_result = {"processed": 0}
+        errors.append(f"Финотчёт: {str(e)[:100]}")
+
+    combined_error = "; ".join(errors) if errors else (report_result.get("error") or tariffs_result.get("error"))
+
+    return SyncResult(
+        processed=report_result.get("processed", 0),
+        updated=dims_result.get("updated", 0),
+        warnings=report_result.get("warnings", 0),
+        error=combined_error,
+    )
 
 
 @router.post("/upload-nomenclature", response_model=SyncResult)
