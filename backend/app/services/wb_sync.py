@@ -1,8 +1,11 @@
 """
 Синхронизация данных из WB API в базу.
 """
+import logging
 from datetime import date, timedelta
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
