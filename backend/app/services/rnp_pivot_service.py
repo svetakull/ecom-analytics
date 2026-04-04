@@ -111,15 +111,19 @@ def _cogs_per_unit(db: Session, sku_id: int, target_date: date = None, channel_i
     return float(batch.total_cost_per_unit) if batch else 0.0
 
 
-def _stock_by_date(db: Session, sku_id: int, target_date: date) -> dict:
+def _stock_by_date(db: Session, sku_id: int, target_date: date, channel_type: str = None) -> dict:
     """
     Остаток на дату: возвращает dict с qty (на складах), in_way_to_client, in_way_from_client.
     Берём ближайшую запись ≤ target_date.
 
-    ВАЖНО: WB API иногда возвращает детализацию по складам (47 строк),
-    иногда агрегат (1 строка «WB склад»). Берём строку с MAX(qty) —
-    это агрегированный остаток, а не сумму всех строк (чтобы не задваивать).
+    Фильтруем по каналу через имя склада:
+    - WB: только «WB склад» (агрегированный) — без детальных WB складов
+    - Ozon: склады с именем «Ozon ...»
+    - Lamoda: «Lamoda FBO»
+    Если канал не указан — суммируем агрегированные склады каналов.
     """
+    from app.models.catalog import Warehouse
+
     latest = (
         db.query(func.max(Stock.date))
         .filter(Stock.sku_id == sku_id, Stock.date <= target_date)
@@ -128,35 +132,45 @@ def _stock_by_date(db: Session, sku_id: int, target_date: date) -> dict:
     if not latest:
         return {"qty": 0, "in_way_to_client": 0, "in_way_from_client": 0}
 
-    # Берём строку с максимальным qty — это агрегированный склад
-    row = (
-        db.query(Stock.qty, Stock.in_way_to_client, Stock.in_way_from_client)
+    q = (
+        db.query(
+            func.sum(Stock.qty),
+            func.sum(Stock.in_way_to_client),
+            func.sum(Stock.in_way_from_client),
+        )
+        .join(Warehouse, Stock.warehouse_id == Warehouse.id)
         .filter(Stock.sku_id == sku_id, Stock.date == latest)
-        .order_by(Stock.qty.desc())
-        .first()
     )
-    if not row:
-        return {"qty": 0, "in_way_to_client": 0, "in_way_from_client": 0}
 
+    if channel_type == "wb":
+        # Только агрегированный «WB склад» — НЕ детальные (Невинномысск, Казань и пр.)
+        q = q.filter(Warehouse.name == "WB склад")
+    elif channel_type == "ozon":
+        q = q.filter(Warehouse.name.like("Ozon%"))
+    elif channel_type == "lamoda":
+        q = q.filter(Warehouse.name.like("Lamoda%"))
+    else:
+        # Все каналы — берём только агрегированные (WB склад + Ozon% + Lamoda%)
+        q = q.filter(
+            (Warehouse.name == "WB склад") |
+            Warehouse.name.like("Ozon%") |
+            Warehouse.name.like("Lamoda%")
+        )
+
+    row = q.first()
     return {
-        "qty": int(row[0] or 0),
-        "in_way_to_client": int(row[1] or 0),
-        "in_way_from_client": int(row[2] or 0),
+        "qty": int(row[0] or 0) if row else 0,
+        "in_way_to_client": int(row[1] or 0) if row else 0,
+        "in_way_from_client": int(row[2] or 0) if row else 0,
     }
 
 
-def _current_stock(db: Session, sku_id: int) -> int:
-    """Текущий остаток — MAX(qty) строка за последнюю дату (агрегированный склад)."""
+def _current_stock(db: Session, sku_id: int, channel_type: str = None) -> int:
+    """Текущий остаток — фильтрация по каналу (агрегированный склад)."""
     latest = db.query(func.max(Stock.date)).filter(Stock.sku_id == sku_id).scalar()
     if not latest:
         return 0
-    row = (
-        db.query(Stock.qty)
-        .filter(Stock.sku_id == sku_id, Stock.date == latest)
-        .order_by(Stock.qty.desc())
-        .first()
-    )
-    return int(row[0]) if row else 0
+    return _stock_by_date(db, sku_id, latest, channel_type=channel_type)["qty"]
 
 
 def _build_logistics_map(db: Session, sku_id: int, channel_id: int, start: date, end: date) -> dict:
@@ -658,7 +672,7 @@ def get_rnp_pivot(
             ).scalar() or 0
 
             # Остаток на эту дату
-            stock_data = _stock_by_date(db, sku.id, d)
+            stock_data = _stock_by_date(db, sku.id, d, channel_type=channel.type.value)
             stock = stock_data["qty"]
             in_way_to = stock_data["in_way_to_client"]
             in_way_from = stock_data["in_way_from_client"]
@@ -883,7 +897,7 @@ def get_rnp_pivot(
         avg_p_after = round(sum(price_after_spp_samples) / len(price_after_spp_samples), 2) if price_after_spp_samples else 0
         avg_spp_total = round(sum(spp_samples) / len(spp_samples), 2) if spp_samples else 0
         avg_commission_pct = round(sum(commission_pct_samples) / len(commission_pct_samples), 4) if commission_pct_samples else float(channel.commission_pct)
-        current_stock = _current_stock(db, sku.id)
+        current_stock = _current_stock(db, sku.id, channel_type=channel.type.value)
 
         # Процент выкупа
         buyout_pct = round(buyout_rate * 100, 2)
