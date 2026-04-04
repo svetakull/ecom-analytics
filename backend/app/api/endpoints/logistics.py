@@ -115,20 +115,34 @@ def get_by_article(
             func.sum(LogisticsOperation.difference).label("sum_diff"),
             func.max(LogisticsOperation.volume_card_liters).label("vol_card"),
             func.max(LogisticsOperation.volume_nomenclature_liters).label("vol_nom"),
-            func.sum(func.cast(LogisticsOperation.operation_status == "Переплата", type_=func.coalesce)).label("overpay"),
-            func.sum(func.cast(LogisticsOperation.operation_status == "Экономия", type_=func.coalesce)).label("saving"),
         )
         .group_by(LogisticsOperation.seller_article, LogisticsOperation.nm_id)
         .all()
     )
+
+    # Подсчёт статусов по артикулам (отдельный запрос)
+    all_ops = q.with_entities(
+        LogisticsOperation.seller_article,
+        LogisticsOperation.nm_id,
+        LogisticsOperation.operation_status,
+    ).all()
+    status_counts: dict[tuple, dict] = {}
+    for op in all_ops:
+        key = (op.seller_article, op.nm_id)
+        if key not in status_counts:
+            status_counts[key] = {"overpay": 0, "saving": 0}
+        if op.operation_status == "Переплата":
+            status_counts[key]["overpay"] += 1
+        elif op.operation_status == "Экономия":
+            status_counts[key]["saving"] += 1
 
     result = []
     for r in rows:
         vol_nom = float(r.vol_nom or 0)
         vol_card = float(r.vol_card or 0)
         cnt = int(r.cnt)
-        overpay = int(r.overpay or 0) if r.overpay else 0
-        saving = int(r.saving or 0) if r.saving else 0
+        key = (r.seller_article, r.nm_id)
+        sc = status_counts.get(key, {"overpay": 0, "saving": 0})
         result.append(LogisticsArticleSummary(
             seller_article=r.seller_article,
             nm_id=r.nm_id,
@@ -139,8 +153,8 @@ def get_by_article(
             volume_card=vol_card,
             volume_nomenclature=vol_nom,
             dimensions_status=determine_dimensions_status(vol_nom, vol_card),
-            overpay_count=overpay,
-            saving_count=saving,
+            overpay_count=sc["overpay"],
+            saving_count=sc["saving"],
             match_count=cnt - overpay - saving,
         ))
 
