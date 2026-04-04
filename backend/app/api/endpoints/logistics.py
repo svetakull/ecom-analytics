@@ -321,7 +321,15 @@ def sync_logistics(
     client = WBClient(integration.api_key)
     errors = []
 
-    # Шаг 1: Тарифы складов
+    # Шаг 1: Габариты карточек товаров (все карточки продавца из Content API)
+    try:
+        dims_result = sync_card_dimensions(db, client)
+    except Exception as e:
+        logger.warning(f"Габариты карточек: {e}")
+        dims_result = {"updated": 0}
+        errors.append(f"Габариты: {str(e)[:100]}")
+
+    # Шаг 2: Тарифы складов
     try:
         tariffs_result = sync_warehouse_tariffs(db, client)
     except Exception as e:
@@ -329,32 +337,13 @@ def sync_logistics(
         tariffs_result = {}
         errors.append(f"Тарифы: {str(e)[:100]}")
 
-    # Шаг 2: Загрузить финотчёт → получить nm_id из него
+    # Шаг 3: Финансовый отчёт — загрузка и расчёт логистики
     try:
-        report_rows = client.get_report_detail(date_from, date_to)
+        report_result = process_financial_report(db, client, date_from, date_to, calc_method)
     except Exception as e:
-        logger.exception("Ошибка загрузки финотчёта")
-        report_rows = []
+        logger.exception("Ошибка обработки финотчёта")
+        report_result = {"processed": 0}
         errors.append(f"Финотчёт: {str(e)[:100]}")
-
-    # Шаг 3: Собрать уникальные nm_id из финотчёта → загрузить габариты карточек
-    nm_ids_from_report = list({int(r.get("nm_id", 0)) for r in report_rows if r.get("nm_id")})
-    dims_result = {"updated": 0}
-    if nm_ids_from_report:
-        try:
-            dims_result = sync_card_dimensions(db, client, nm_ids=nm_ids_from_report)
-        except Exception as e:
-            logger.warning(f"Габариты карточек: {e}")
-            errors.append(f"Габариты: {str(e)[:100]}")
-
-    # Шаг 4: Обработать финотчёт (расчёт логистики)
-    report_result = {"processed": 0, "warnings": 0}
-    if report_rows:
-        try:
-            report_result = process_financial_report(db, client, date_from, date_to, calc_method, rows=report_rows)
-        except Exception as e:
-            logger.exception("Ошибка обработки финотчёта")
-            errors.append(f"Расчёт: {str(e)[:100]}")
 
     combined_error = "; ".join(errors) if errors else (report_result.get("error") or tariffs_result.get("error"))
 

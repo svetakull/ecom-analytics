@@ -34,23 +34,10 @@ def _get_wb_channel(db: Session) -> Channel:
     return ch
 
 
-def sync_card_dimensions(db: Session, client: WBClient, nm_ids: list[int] = None) -> dict:
-    """Получить габариты карточек товаров через Content API.
-    nm_ids — список номенклатур из финотчёта.
-    """
-    if not nm_ids:
-        return {"updated": 0, "total": 0}
+def sync_card_dimensions(db: Session, client: WBClient) -> dict:
+    """Получить габариты ВСЕХ карточек товаров продавца через Content API."""
 
-    # Карта nm_id → sku_id
-    nm_to_sku = {}
-    channel = _get_wb_channel(db)
-    for sc in db.query(SKUChannel).filter(SKUChannel.channel_id == channel.id).all():
-        try:
-            nm_to_sku[int(sc.mp_article)] = sc.sku_id
-        except (ValueError, TypeError):
-            pass
-
-    cards = client.get_card_content(nm_ids)
+    cards = client.get_card_content_all()
     updated = 0
 
     for card in cards:
@@ -210,21 +197,19 @@ def process_financial_report(
     client: WBClient,
     date_from: date,
     date_to: date,
-    calc_method: str = "card",  # "card" или "nomenclature"
-    rows: list[dict] = None,
+    calc_method: str = "card",
 ) -> dict:
     """
-    Обработать финансовый отчёт WB и рассчитать логистику по каждой операции.
-    rows — уже загруженные строки отчёта (если None — загрузит сам).
+    Загрузить финансовый отчёт WB и рассчитать логистику по каждой операции.
+    Источник 1 из ТЗ: еженедельный финансовый отчёт — фактически удержанные суммы.
     """
     channel = _get_wb_channel(db)
 
-    if rows is None:
-        try:
-            rows = client.get_report_detail(date_from, date_to)
-        except WBApiError as e:
-            logger.error(f"Ошибка загрузки финотчёта: {e}")
-            return {"processed": 0, "error": str(e)}
+    try:
+        rows = client.get_report_detail(date_from, date_to)
+    except WBApiError as e:
+        logger.error(f"Ошибка загрузки финотчёта: {e}")
+        return {"processed": 0, "error": str(e)}
 
     # Загружаем справочники
     card_dims = {d.nm_id: d for d in db.query(WBCardDimensions).all()}

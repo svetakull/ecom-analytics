@@ -438,32 +438,47 @@ class WBClient:
 
     # ─── Габариты и логистика ───
 
-    def get_card_content(self, nm_ids: list[int]) -> list[dict]:
+    def get_card_content_all(self) -> list[dict]:
         """
-        Получить карточки товаров с габаритами через Content API.
-        POST /content/v2/get/cards/list
-        Батч до 100 nmId за запрос.
+        Получить ВСЕ карточки товаров продавца с габаритами через Content API.
+        POST /content/v2/get/cards/list с пагинацией через cursor.
         Возвращает список карточек с dimensions (length, width, height).
         """
         url = "https://content-api.wildberries.ru/content/v2/get/cards/list"
         all_cards = []
-        for i in range(0, len(nm_ids), 100):
-            batch = nm_ids[i:i + 100]
+        cursor = {"limit": 100, "updatedAt": None, "nmID": None}
+
+        while True:
             payload = {
                 "settings": {
-                    "cursor": {"limit": 100},
-                    "filter": {"withPhoto": -1, "textSearch": "", "tagIDs": []},
+                    "cursor": cursor,
+                    "filter": {"withPhoto": -1},
                 },
-                "imtIDs": batch,
             }
             try:
                 data = self._post(url, payload)
-                cards = data.get("cards", []) if isinstance(data, dict) else []
-                all_cards.extend(cards)
             except WBApiError:
-                continue
-            if i + 100 < len(nm_ids):
-                time.sleep(1)
+                break
+
+            if not isinstance(data, dict):
+                break
+
+            cards = data.get("cards", [])
+            all_cards.extend(cards)
+
+            # Пагинация
+            cursor_data = data.get("cursor", {})
+            total = cursor_data.get("total", 0)
+            if not cards or len(all_cards) >= total:
+                break
+
+            cursor = {
+                "limit": 100,
+                "updatedAt": cursor_data.get("updatedAt"),
+                "nmID": cursor_data.get("nmID"),
+            }
+            time.sleep(0.5)
+
         return all_cards
 
     def get_warehouse_tariffs(self) -> list[dict]:
