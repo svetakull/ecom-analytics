@@ -115,6 +115,10 @@ def _stock_by_date(db: Session, sku_id: int, target_date: date) -> dict:
     """
     Остаток на дату: возвращает dict с qty (на складах), in_way_to_client, in_way_from_client.
     Берём ближайшую запись ≤ target_date.
+
+    ВАЖНО: WB API иногда возвращает детализацию по складам (47 строк),
+    иногда агрегат (1 строка «WB склад»). Берём строку с MAX(qty) —
+    это агрегированный остаток, а не сумму всех строк (чтобы не задваивать).
     """
     latest = (
         db.query(func.max(Stock.date))
@@ -123,15 +127,17 @@ def _stock_by_date(db: Session, sku_id: int, target_date: date) -> dict:
     )
     if not latest:
         return {"qty": 0, "in_way_to_client": 0, "in_way_from_client": 0}
+
+    # Берём строку с максимальным qty — это агрегированный склад
     row = (
-        db.query(
-            func.sum(Stock.qty),
-            func.sum(Stock.in_way_to_client),
-            func.sum(Stock.in_way_from_client),
-        )
+        db.query(Stock.qty, Stock.in_way_to_client, Stock.in_way_from_client)
         .filter(Stock.sku_id == sku_id, Stock.date == latest)
+        .order_by(Stock.qty.desc())
         .first()
     )
+    if not row:
+        return {"qty": 0, "in_way_to_client": 0, "in_way_from_client": 0}
+
     return {
         "qty": int(row[0] or 0),
         "in_way_to_client": int(row[1] or 0),
@@ -140,10 +146,17 @@ def _stock_by_date(db: Session, sku_id: int, target_date: date) -> dict:
 
 
 def _current_stock(db: Session, sku_id: int) -> int:
+    """Текущий остаток — MAX(qty) строка за последнюю дату (агрегированный склад)."""
     latest = db.query(func.max(Stock.date)).filter(Stock.sku_id == sku_id).scalar()
     if not latest:
         return 0
-    return int(db.query(func.sum(Stock.qty)).filter(Stock.sku_id == sku_id, Stock.date == latest).scalar() or 0)
+    row = (
+        db.query(Stock.qty)
+        .filter(Stock.sku_id == sku_id, Stock.date == latest)
+        .order_by(Stock.qty.desc())
+        .first()
+    )
+    return int(row[0]) if row else 0
 
 
 def _build_logistics_map(db: Session, sku_id: int, channel_id: int, start: date, end: date) -> dict:
