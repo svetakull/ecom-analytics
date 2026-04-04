@@ -36,22 +36,23 @@ def _get_wb_channel(db: Session) -> Channel:
 
 def sync_card_dimensions(db: Session, client: WBClient) -> dict:
     """Получить габариты карточек товаров через Content API."""
-    channel = _get_wb_channel(db)
-    sku_channels = (
-        db.query(SKUChannel)
-        .filter(SKUChannel.channel_id == channel.id, SKUChannel.mp_article.isnot(None))
-        .all()
-    )
+    # Берём nm_id из уже загруженных операций + из SKUChannel
+    from sqlalchemy import distinct
+    nm_ids_from_ops = [
+        r[0] for r in
+        db.query(distinct(LogisticsOperation.nm_id)).filter(LogisticsOperation.nm_id > 0).all()
+    ]
 
-    nm_ids = []
+    channel = _get_wb_channel(db)
     nm_to_sku = {}
-    for sc in sku_channels:
+    for sc in db.query(SKUChannel).filter(SKUChannel.channel_id == channel.id).all():
         try:
-            nm_id = int(sc.mp_article)
-            nm_ids.append(nm_id)
-            nm_to_sku[nm_id] = sc.sku_id
+            nm_to_sku[int(sc.mp_article)] = sc.sku_id
         except (ValueError, TypeError):
-            continue
+            pass
+
+    # Также пробуем из SKUChannel
+    nm_ids = list(set(nm_ids_from_ops) | set(nm_to_sku.keys()))
 
     if not nm_ids:
         return {"updated": 0, "total": 0}
