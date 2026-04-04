@@ -34,28 +34,21 @@ def _get_wb_channel(db: Session) -> Channel:
     return ch
 
 
-def sync_card_dimensions(db: Session, client: WBClient) -> dict:
-    """Получить габариты карточек товаров через Content API."""
-    # Берём nm_id из уже загруженных операций + из SKUChannel
-    from sqlalchemy import distinct
-    nm_ids_from_ops = [
-        r[0] for r in
-        db.query(distinct(LogisticsOperation.nm_id)).filter(LogisticsOperation.nm_id > 0).all()
-    ]
+def sync_card_dimensions(db: Session, client: WBClient, nm_ids: list[int] = None) -> dict:
+    """Получить габариты карточек товаров через Content API.
+    nm_ids — список номенклатур из финотчёта.
+    """
+    if not nm_ids:
+        return {"updated": 0, "total": 0}
 
-    channel = _get_wb_channel(db)
+    # Карта nm_id → sku_id
     nm_to_sku = {}
+    channel = _get_wb_channel(db)
     for sc in db.query(SKUChannel).filter(SKUChannel.channel_id == channel.id).all():
         try:
             nm_to_sku[int(sc.mp_article)] = sc.sku_id
         except (ValueError, TypeError):
             pass
-
-    # Также пробуем из SKUChannel
-    nm_ids = list(set(nm_ids_from_ops) | set(nm_to_sku.keys()))
-
-    if not nm_ids:
-        return {"updated": 0, "total": 0}
 
     cards = client.get_card_content(nm_ids)
     updated = 0
@@ -218,19 +211,20 @@ def process_financial_report(
     date_from: date,
     date_to: date,
     calc_method: str = "card",  # "card" или "nomenclature"
+    rows: list[dict] = None,
 ) -> dict:
     """
-    Загрузить финансовый отчёт WB и рассчитать логистику по каждой операции.
-    Расширяет существующий парсер — извлекает доп. поля для модуля габаритов.
+    Обработать финансовый отчёт WB и рассчитать логистику по каждой операции.
+    rows — уже загруженные строки отчёта (если None — загрузит сам).
     """
     channel = _get_wb_channel(db)
 
-    # Загружаем финотчёт
-    try:
-        rows = client.get_report_detail(date_from, date_to)
-    except WBApiError as e:
-        logger.error(f"Ошибка загрузки финотчёта: {e}")
-        return {"processed": 0, "error": str(e)}
+    if rows is None:
+        try:
+            rows = client.get_report_detail(date_from, date_to)
+        except WBApiError as e:
+            logger.error(f"Ошибка загрузки финотчёта: {e}")
+            return {"processed": 0, "error": str(e)}
 
     # Загружаем справочники
     card_dims = {d.nm_id: d for d in db.query(WBCardDimensions).all()}
