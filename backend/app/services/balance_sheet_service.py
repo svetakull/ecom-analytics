@@ -52,28 +52,18 @@ def _cash_balances(db: Session, as_of: date) -> dict[str, float]:
     from app.models.finance import DDSManualEntry
     balances: dict[str, float] = {}
 
-    # Из DDS manual entries (balance_acc:Счёт, mp_balance_wb, mp_balance_ozon, mp_transit)
+    # Из DDS manual entries (balance_acc:Счёт — это банковские счета)
+    # mp_balance_* и mp_transit идут в ДЕБИТОРКУ МП, а не в ДС
     entries = db.query(DDSManualEntry).filter(
         DDSManualEntry.date <= as_of,
-    ).filter(
-        (DDSManualEntry.category.like("balance_acc:%")) |
-        (DDSManualEntry.category.in_(["mp_balance_wb", "mp_balance_ozon", "mp_transit"]))
+        DDSManualEntry.category.like("balance_acc:%"),
     ).order_by(DDSManualEntry.date.desc(), DDSManualEntry.id.desc()).all()
     seen = set()
     for e in entries:
         if e.category in seen:
             continue
         seen.add(e.category)
-        if e.category.startswith("balance_acc:"):
-            name = e.category.split(":", 1)[1]
-        elif e.category == "mp_balance_wb":
-            name = "Баланс WB"
-        elif e.category == "mp_balance_ozon":
-            name = "Баланс Ozon"
-        elif e.category == "mp_transit":
-            name = "Транзит (в пути)"
-        else:
-            name = e.category
+        name = e.category.split(":", 1)[1]
         balances[name] = float(e.amount or 0)
 
     # Фолбэк: устаревший DDSBalance
@@ -83,6 +73,23 @@ def _cash_balances(db: Session, as_of: date) -> dict[str, float]:
             rows = db.query(DDSBalance.account_name, DDSBalance.amount).filter(DDSBalance.date == last_date).all()
             balances = {r.account_name: float(r.amount) for r in rows}
     return balances
+
+
+def _mp_manual_balances(db: Session, as_of: date) -> dict[str, float]:
+    """Ручные остатки МП из DDS: mp_balance_wb/ozon/mp_transit."""
+    from app.models.finance import DDSManualEntry
+    result: dict[str, float] = {}
+    entries = db.query(DDSManualEntry).filter(
+        DDSManualEntry.date <= as_of,
+        DDSManualEntry.category.in_(["mp_balance_wb", "mp_balance_ozon", "mp_transit"]),
+    ).order_by(DDSManualEntry.date.desc(), DDSManualEntry.id.desc()).all()
+    seen = set()
+    for e in entries:
+        if e.category in seen:
+            continue
+        seen.add(e.category)
+        result[e.category] = float(e.amount or 0)
+    return result
 
 
 def _mp_receivables(db: Session, as_of: date) -> dict[str, float]:
@@ -95,7 +102,16 @@ def _mp_receivables(db: Session, as_of: date) -> dict[str, float]:
     result = {}
     type_map = {"wb": ChannelType.WB, "ozon": ChannelType.OZON, "lamoda": ChannelType.LAMODA}
 
+    # Ручные балансы МП — приоритет над автоматическим расчётом
+    manual_mp = _mp_manual_balances(db, as_of)
+    manual_key_map = {"wb": "mp_balance_wb", "ozon": "mp_balance_ozon"}
+
     for mp, delay_days in delays.items():
+        # Если пользователь задал ручной баланс — используем его
+        manual_key = manual_key_map.get(mp)
+        if manual_key and manual_key in manual_mp:
+            result[mp] = manual_mp[manual_key]
+            continue
         ct = type_map.get(mp)
         ch = db.query(Channel).filter(Channel.type == ct).first() if ct else None
         if not ch:
