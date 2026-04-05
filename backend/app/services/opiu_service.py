@@ -170,6 +170,23 @@ def get_opiu(
             month_key = period[:7]
         month_weeks[month_key].append(period)
 
+    # Предрасчёт налогов для каждой недели по настройкам tax_rates
+    # (неделя принадлежит месяцу по четвергу — ISO rule)
+    from app.api.endpoints.tax_rates import get_effective_tax_rates
+    from datetime import datetime as _dt, timedelta as _td
+    for period, m in monthly.items():
+        try:
+            week_start = _dt.strptime(period, "%Y-%m-%d").date()
+            thursday = week_start + _td(days=3)
+        except Exception:
+            m["nds_amount"] = 0
+            m["usn_amount"] = 0
+            continue
+        tr = get_effective_tax_rates(db, year=thursday.year, month=thursday.month, channel_id=None)
+        prodazhi = (m.get("compensation", 0) or 0) - (m.get("commission", 0) or 0)
+        m["nds_amount"] = round(prodazhi * (tr["nds_pct"] / 100), 2)
+        m["usn_amount"] = round(prodazhi * (tr["usn_pct"] / 100), 2)
+
     periods_result = []
     prev_month = None
     fields = list(next(iter(monthly.values())).keys()) if monthly else []
@@ -185,21 +202,21 @@ def get_opiu(
         # Subtotal за предыдущий месяц
         if prev_month and cur_month != prev_month:
             month_data = {k: sum(monthly[wp][k] for wp in month_weeks.get(prev_month, [])) for k in fields}
-            month_lines = _build_lines(month_data, f"month:{prev_month}")
+            month_lines = _build_lines(month_data, f"month:{prev_month}", db)
             month_names = {"01": "Январь", "02": "Февраль", "03": "Март", "04": "Апрель",
                           "05": "Май", "06": "Июнь", "07": "Июль", "08": "Август",
                           "09": "Сентябрь", "10": "Октябрь", "11": "Ноябрь", "12": "Декабрь"}
             m_label = month_names.get(prev_month[-2:], prev_month[-2:])
             periods_result.append({"period": f"month:{prev_month}", "label": f"Итого {m_label}", "lines": month_lines, "is_month_total": True})
 
-        lines = _build_lines(monthly[period], period)
+        lines = _build_lines(monthly[period], period, db)
         periods_result.append({"period": period, "lines": lines})
         prev_month = cur_month
 
     # Subtotal за последний месяц
     if prev_month and month_weeks.get(prev_month):
         month_data = {k: sum(monthly[wp][k] for wp in month_weeks[prev_month]) for k in fields}
-        month_lines = _build_lines(month_data, f"month:{prev_month}")
+        month_lines = _build_lines(month_data, f"month:{prev_month}", db)
         month_names = {"01": "Январь", "02": "Февраль", "03": "Март", "04": "Апрель",
                       "05": "Май", "06": "Июнь", "07": "Июль", "08": "Август",
                       "09": "Сентябрь", "10": "Октябрь", "11": "Ноябрь", "12": "Декабрь"}
@@ -208,7 +225,7 @@ def get_opiu(
 
     # Итого (всё)
     total_data = {k: sum(m[k] for m in monthly.values()) for k in fields} if monthly else {}
-    total_lines = _build_lines(total_data, "total") if total_data else []
+    total_lines = _build_lines(total_data, "total", db) if total_data else []
 
     return {
         "date_from": date_from.isoformat(),
@@ -218,7 +235,7 @@ def get_opiu(
     }
 
 
-def _build_lines(data: dict, period: str) -> list:
+def _build_lines(data: dict, period: str, db=None) -> list:
     """Построить строки ОПиУ из агрегированных данных."""
     realizaciya = data["sale_amount"] - data["return_amount"]
     prodazhi = data["compensation"] - data["commission"]
@@ -267,27 +284,9 @@ def _build_lines(data: dict, period: str) -> list:
         except ValueError:
             month_date = None
 
-    # Налоги зависят от периода:
-    # 2025: УСН 1%, НДС нет
-    # Янв-Фев 2026: УСН 3%, НДС нет
-    # С марта 2026: УСН 1% + НДС 5%
-    if month_date:
-        if month_date >= NDS_START:
-            # Март 2026+: УСН 1% + НДС 5%
-            nds = round(prodazhi * NDS_RATE, 2)
-            usn = round(prodazhi * 0.01, 2)
-        elif month_date.year == 2026:
-            # Янв-Фев 2026: УСН 3%
-            nds = 0
-            usn = round(prodazhi * 0.03, 2)
-        else:
-            # 2025: УСН 1%
-            nds = 0
-            usn = round(prodazhi * 0.01, 2)
-    else:
-        nds = 0
-        usn = round(prodazhi * 0.01, 2)
-
+    # Налоги: берём из data (предрассчитаны в get_opiu через tax_rates)
+    nds = data.get("nds_amount", 0) or 0
+    usn = data.get("usn_amount", 0) or 0
     taxes = nds + usn
 
     chistaya = ebitda - taxes

@@ -75,12 +75,6 @@ const NAV_GROUPS: NavGroup[] = [
         icon: <DollarSign size={16} />,
         roles: ['owner', 'finance_manager', 'mp_manager'],
       },
-      {
-        path: '/tax-rates',
-        label: 'Налоговые ставки',
-        icon: <DollarSign size={16} />,
-        roles: ['owner', 'finance_manager'],
-      },
     ],
   },
   {

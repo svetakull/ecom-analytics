@@ -423,27 +423,6 @@ export default function JournalPage() {
                 ⟲ Сбросить колонки
               </button>
             </div>
-            {/* Синхронизированный горизонтальный скролл сверху */}
-            <div
-              id="journal-scroll-top"
-              className="overflow-x-scroll border-b border-gray-100"
-              style={{ maxWidth: '100%', height: 14 }}
-              onScroll={(e) => {
-                const body = (window as any)._journalScrollEl as HTMLElement | undefined
-                if (body) body.scrollLeft = (e.target as HTMLElement).scrollLeft
-              }}
-            >
-              <div style={{ width: columns.reduce((s, c) => s + c.width, 0), height: 1 }} />
-            </div>
-            <div
-              ref={(el) => { if (el) (window as any)._journalScrollEl = el }}
-              className="overflow-x-auto"
-              style={{ maxWidth: '100%' }}
-              onScroll={(e) => {
-                const top = document.getElementById('journal-scroll-top')
-                if (top) top.scrollLeft = (e.target as HTMLElement).scrollLeft
-              }}
-            >
             <table className="text-sm" style={{ borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', width: columns.reduce((s, c) => s + c.width, 0) }}>
               <colgroup>
                 {columns.map(c => <col key={c.key} style={{ width: c.width }} />)}
@@ -509,7 +488,6 @@ export default function JournalPage() {
                 ))}
               </tbody>
             </table>
-            </div>
 
             {/* Summary row */}
             {entries.length > 0 && (

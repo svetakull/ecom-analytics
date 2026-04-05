@@ -28,7 +28,8 @@ from app.services.rnp_pivot_service import wb_photo_url  # reuse CDN formula
 from app.services.ozon_finance import get_ozon_customer_price_ratio, get_ozon_fin_ratios
 
 LAMODA_RETURN_FEE_RUB = 29.0
-TAX_PCT = 0.06  # 1% УСН + 5% НДС
+# TAX_PCT fallback (реальные ставки берутся из /tax-rates внутри get_otsifrovka)
+_TAX_PCT_DEFAULT = 0.06
 
 
 def _get_ozon_customer_price_ratio_UNUSED(db: Session) -> float:
@@ -332,6 +333,11 @@ def get_otsifrovka(
         date_to = today
     days = (date_to - date_from).days or 1
     ref_date = date_to - timedelta(days=1) if date_to == today else date_to
+
+    # Эффективная налоговая ставка для периода (по ref_date — конец периода)
+    from app.api.endpoints.tax_rates import get_effective_tax_rates
+    _tr = get_effective_tax_rates(db, year=ref_date.year, month=ref_date.month, channel_id=None)
+    tax_pct = (_tr["usn_pct"] + _tr["nds_pct"]) / 100
 
     # Фильтр каналов: новый мультиселект (channels) или старый одиночный (channel_type)
     default_types = [ChannelType.WB, ChannelType.OZON, ChannelType.LAMODA]
@@ -690,7 +696,7 @@ def get_otsifrovka(
             # TrueStats формулы:
             # Налоговая база = Продажи(покупат.) - Возвраты(покупат.)
             tax_base_rub = max(sales_rub - returns_rub, 0)
-            tax_rub = round(tax_base_rub * TAX_PCT, 2)
+            tax_rub = round(tax_base_rub * tax_pct, 2)
 
             # Себестоимость от продаж (шт) — НЕ вычитаем returns_qty
             # (returns_qty включает отмены, которые не были доставлены)
@@ -713,7 +719,7 @@ def get_otsifrovka(
         elif channel.type == ChannelType.WB and wb_has_data:
             # WB: формулы TrueStats
             tax_base_rub = max(sales_rub - returns_rub, 0)
-            tax_rub = round(tax_base_rub * TAX_PCT, 2)
+            tax_rub = round(tax_base_rub * tax_pct, 2)
 
             # Себестоимость от продаж (шт)
             cogs = _cogs_per_unit(db, sku.id, ref_date)
@@ -734,7 +740,7 @@ def get_otsifrovka(
             net_sales_rub = sales_rub - returns_rub
             net_sales_qty = max(sales_qty - returns_qty, 0)
             tax_base_rub = max(net_sales_rub, 0)
-            tax_rub = round(net_sales_rub * TAX_PCT, 2) if net_sales_rub > 0 else 0.0
+            tax_rub = round(net_sales_rub * tax_pct, 2) if net_sales_rub > 0 else 0.0
 
             cogs = _cogs_per_unit(db, sku.id, ref_date)
             cogs_rub = round(sales_qty * cogs, 2)

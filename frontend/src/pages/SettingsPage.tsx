@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { integrationsApi, analyticsApi } from '@/api/endpoints'
 import { Settings, Key, RefreshCw, CheckCircle, AlertCircle, ExternalLink, SlidersHorizontal, RotateCcw } from 'lucide-react'
 import type { AnalyticsThreshold } from '@/types'
+import TaxRatesSection from '@/pages/TaxRatesPage'
 
 export default function SettingsPage() {
   const qc = useQueryClient()
@@ -18,7 +19,7 @@ export default function SettingsPage() {
   const wbIntegration = integrations.find((i) => i.type === 'wb')
 
   return (
-    <div className="p-6 max-w-2xl mx-auto space-y-6">
+    <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div className="flex items-center gap-3">
         <Settings size={22} className="text-gray-500" />
         <h1 className="text-xl font-semibold text-gray-900">Настройки</h1>
@@ -38,6 +39,11 @@ export default function SettingsPage() {
 
       {/* Пороги аналитики */}
       <ThresholdsSection />
+
+      {/* Налоговые ставки */}
+      <div className="rounded-xl border border-gray-200 p-4">
+        <TaxRatesSection />
+      </div>
     </div>
   )
 }

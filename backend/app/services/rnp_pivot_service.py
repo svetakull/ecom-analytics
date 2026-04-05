@@ -849,10 +849,14 @@ def get_rnp_pivot(
             # Конверсия: корзина → заказ (используем фактические заказы дня)
             order_from_cart_pct = round(o_qty / add_to_cart_total * 100, 0) if add_to_cart_total > 0 else 0.0
 
-            # Налоги: 1% УСН + 5% НДС от цены до СПП (суммы продаж)
-            tax_usn_per_unit   = round(p_before * 0.01, 2)
-            tax_nds_per_unit   = round(p_before * 0.05, 2)
-            tax_total_per_unit = round(p_before * 0.06, 2)
+            # Налоги из настроек /tax-rates (месяц → квартал → год)
+            from app.api.endpoints.tax_rates import get_effective_tax_rates
+            _tr = get_effective_tax_rates(db, year=d.year, month=d.month, channel_id=None)
+            _usn_pct = _tr["usn_pct"] / 100
+            _nds_pct = _tr["nds_pct"] / 100
+            tax_usn_per_unit   = round(p_before * _usn_pct, 2)
+            tax_nds_per_unit   = round(p_before * _nds_pct, 2)
+            tax_total_per_unit = round(p_before * (_usn_pct + _nds_pct), 2)
 
             # Прогноз прибыли, ₽:
             #   = (Цена до СПП − комиссия − логистика − налоги − себестоимость) × прогноз продаж, шт

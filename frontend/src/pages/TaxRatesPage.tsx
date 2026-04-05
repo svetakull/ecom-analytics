@@ -106,7 +106,7 @@ export default function TaxRatesPage() {
         <div>
           <h1 className="text-xl font-bold text-gray-900">Налоговые ставки</h1>
           <p className="text-xs text-gray-500 mt-0.5">
-            Ставки УСН и НДС по периодам. Применяются к расчёту налогов и маржи в РнП.
+            Ставки УСН и НДС по периодам. Применяются ко всем расчётам: РнП, Оцифровка, ОПиУ, ДДС, Упр. баланс.
           </p>
         </div>
         <div className="flex items-center gap-3">
