@@ -98,8 +98,10 @@ def list_cost_prices(
             target_channels = target_channels.filter(Channel.type == ct)
     target_channel_ids = [c.id for c in target_channels.all()]
 
-    # ── Находим SKU×channel без default-записи и создаём нули ──
+    # ── Находим SKU×channel без default-записи ──
     if target_channel_ids:
+        from app.models.inventory import SKUCostHistory, ProductBatch
+
         sc_q = db.query(SKUChannel).join(SKU, SKUChannel.sku_id == SKU.id).filter(
             SKUChannel.is_active == True,
             SKU.is_active == True,
@@ -116,16 +118,39 @@ def list_cost_prices(
             ).all()
         }
 
+        # Для миграции: берём последнюю актуальную цс из SKUCostHistory,
+        # если нет — из последней ProductBatch. Это значение система сейчас
+        # использует в расчётах ОПиУ (см. opiu_service._cogs_per_unit).
+        def _migrate_cost_for(sku_id: int) -> float:
+            sch = (
+                db.query(SKUCostHistory)
+                .filter(SKUCostHistory.sku_id == sku_id)
+                .order_by(SKUCostHistory.effective_from.desc())
+                .first()
+            )
+            if sch:
+                return float(sch.cost_per_unit)
+            pb = (
+                db.query(ProductBatch)
+                .filter(ProductBatch.sku_id == sku_id)
+                .order_by(ProductBatch.batch_date.desc())
+                .first()
+            )
+            if pb:
+                return float(pb.total_cost_per_unit)
+            return 0.0
+
         created_any = False
         for sc in sc_q.all():
             if (sc.sku_id, sc.channel_id, None) not in existing_defaults:
+                migrated_cost = _migrate_cost_for(sc.sku_id)
                 db.add(CostPrice(
                     sku_id=sc.sku_id,
                     channel_id=sc.channel_id,
                     size=None,
                     is_default=True,
                     effective_from=None,
-                    cost_price=0,
+                    cost_price=migrated_cost,
                     fulfillment=0,
                     vat_rate=0,
                 ))
