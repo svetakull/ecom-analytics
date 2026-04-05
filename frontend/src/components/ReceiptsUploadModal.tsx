@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import { X, Upload, Camera, AlertCircle } from 'lucide-react'
 import clsx from 'clsx'
+import { groupCategoriesForSelect } from '@/utils/categoryGroups'
 
 interface PreviewRow {
   row_index: number
@@ -321,10 +322,14 @@ export default function ReceiptsUploadModal({ open, onClose }: Props) {
                               )}
                             >
                               <option value="">— Выберите —</option>
-                              {categories.map((c) => (
-                                <option key={c.key} value={c.key}>
-                                  {c.name}
-                                </option>
+                              {groupCategoriesForSelect(categories).map((group) => (
+                                <optgroup key={group.label} label={group.label}>
+                                  {group.items.map((c) => (
+                                    <option key={c.key} value={c.key}>
+                                      {c.name}
+                                    </option>
+                                  ))}
+                                </optgroup>
                               ))}
                             </select>
                           </td>

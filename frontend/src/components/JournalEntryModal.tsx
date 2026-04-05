@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import { X, Info } from 'lucide-react'
 import clsx from 'clsx'
+import { groupCategoriesForSelect } from '@/utils/categoryGroups'
 
 type EntryType = 'expense' | 'income' | 'transfer'
 type RecurrenceRule = 'monthly' | 'weekly'
@@ -101,23 +102,7 @@ export default function JournalEntryModal({ open, onClose, editEntry }: Props) {
     enabled: open,
   })
 
-  // Группировка по разделам для optgroup
-  const SECTION_LABELS: Record<string, string> = {
-    income: 'Доходы',
-    expenses: 'Расходы',
-    taxes: 'Налоги',
-    advances: 'Авансы (закупка)',
-    credits: 'Кредиты и удержания',
-    dividends: 'Дивиденды',
-  }
-  const SECTION_ORDER = ['income', 'expenses', 'taxes', 'advances', 'credits', 'dividends']
-  const groupedCategories = SECTION_ORDER
-    .map(section => ({
-      section,
-      label: SECTION_LABELS[section] || section,
-      items: categories.filter(c => c.section === section),
-    }))
-    .filter(g => g.items.length > 0)
+  const groupedCategories = groupCategoriesForSelect(categories)
 
   // Reset form when opening/closing or editing
   useEffect(() => {
@@ -417,7 +402,7 @@ export default function JournalEntryModal({ open, onClose, editEntry }: Props) {
             >
               <option value="">Выберите статью</option>
               {groupedCategories.map((group) => (
-                <optgroup key={group.section} label={group.label}>
+                <optgroup key={group.label} label={group.label}>
                   {group.items.map((c) => (
                     <option key={c.key} value={c.key}>
                       {c.name}

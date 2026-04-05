@@ -7,6 +7,7 @@ import StatementUploadModal from '@/components/StatementUploadModal'
 import ReceiptsUploadModal from '@/components/ReceiptsUploadModal'
 import { api } from '@/api/client'
 import { Plus, Paperclip, Camera, Pencil, Copy, Trash2, RefreshCw } from 'lucide-react'
+import { groupCategoriesForSelect } from '@/utils/categoryGroups'
 import clsx from 'clsx'
 
 const fmt = (n: number) =>
@@ -391,10 +392,14 @@ export default function JournalPage() {
           className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
         >
           <option value="">Все статьи</option>
-          {categories.map((c) => (
-            <option key={c.key} value={c.key}>
-              {c.name}
-            </option>
+          {groupCategoriesForSelect(categories).map((group) => (
+            <optgroup key={group.label} label={group.label}>
+              {group.items.map((c) => (
+                <option key={c.key} value={c.key}>
+                  {c.name}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
       </div>
