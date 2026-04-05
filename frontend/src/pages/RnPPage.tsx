@@ -928,6 +928,333 @@ function SkuPivotCard({ sku, days, onUpdate, externalCollapsed }: { sku: RnPPivo
   )
 }
 
+// ── Агрегация SKU по маркетплейсу ───────────────────────────────────────────
+
+function emptyAd(): AdTypeMetrics {
+  return {
+    budget: 0, impressions: 0, clicks: 0, orders: 0,
+    ctr: 0, cr: 0, cpc: 0, cpm: 0, cpo_all: 0, cpo_ad: 0, cps: 0,
+  }
+}
+
+function emptyDay(): RnPDayMetrics {
+  return {
+    orders_qty: 0, orders_rub: 0, sales_qty: 0, sales_rub: 0,
+    returns_qty: 0, cancellations_qty: 0,
+    forecast_sales_qty: 0, forecast_sales_rub: 0,
+    price_before_spp: 0, price_after_spp: 0, spp_pct: 0,
+    stock_wb: 0, in_way_to_client: 0, in_way_from_client: 0, frozen_capital: 0,
+    buyout_rate_pct: 0, margin_pct: 0, roi_pct: 0,
+    profit_per_unit: 0, profit_total: 0,
+    commission_per_unit: 0, commission_pct: 0,
+    logistics_per_unit: 0, storage_per_unit: 0, cogs_per_unit: 0,
+    tax_usn_per_unit: 0, tax_nds_per_unit: 0, tax_total_per_unit: 0,
+    return_fee_rub: 0,
+    drr_orders_pct: 0, drr_sales_pct: 0,
+    ad_spend: 0, ad_orders_qty: 0,
+    ad_total: emptyAd(), ad_search: emptyAd(), ad_recommend: emptyAd(),
+    open_card_count: 0, ad_clicks_count: 0, organic_clicks_count: 0, organic_clicks_pct: 0,
+    add_to_cart_count: 0, cart_from_card_pct: 0, order_from_cart_pct: 0,
+  }
+}
+
+function aggregateAd(group: AdTypeMetrics[]): AdTypeMetrics {
+  const budget = group.reduce((s, a) => s + a.budget, 0)
+  const impressions = group.reduce((s, a) => s + a.impressions, 0)
+  const clicks = group.reduce((s, a) => s + a.clicks, 0)
+  const orders = group.reduce((s, a) => s + a.orders, 0)
+  return {
+    budget, impressions, clicks, orders,
+    ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
+    cr: clicks > 0 ? (orders / clicks) * 100 : 0,
+    cpc: clicks > 0 ? budget / clicks : 0,
+    cpm: impressions > 0 ? (budget / impressions) * 1000 : 0,
+    cpo_all: orders > 0 ? budget / orders : 0,
+    cpo_ad: orders > 0 ? budget / orders : 0,
+    cps: orders > 0 ? budget / orders : 0,
+  }
+}
+
+function aggregateChannelDay(skus: RnPPivotSKU[], ds: string): RnPDayMetrics {
+  const day = emptyDay()
+  const parts = skus.map(s => s.days[ds]).filter(Boolean) as RnPDayMetrics[]
+  if (parts.length === 0) return day
+
+  // Суммы
+  day.orders_qty = parts.reduce((s, d) => s + d.orders_qty, 0)
+  day.orders_rub = parts.reduce((s, d) => s + d.orders_rub, 0)
+  day.sales_qty = parts.reduce((s, d) => s + d.sales_qty, 0)
+  day.sales_rub = parts.reduce((s, d) => s + d.sales_rub, 0)
+  day.returns_qty = parts.reduce((s, d) => s + d.returns_qty, 0)
+  day.cancellations_qty = parts.reduce((s, d) => s + d.cancellations_qty, 0)
+  day.forecast_sales_qty = parts.reduce((s, d) => s + d.forecast_sales_qty, 0)
+  day.forecast_sales_rub = parts.reduce((s, d) => s + d.forecast_sales_rub, 0)
+  day.stock_wb = parts.reduce((s, d) => s + d.stock_wb, 0)
+  day.in_way_to_client = parts.reduce((s, d) => s + d.in_way_to_client, 0)
+  day.in_way_from_client = parts.reduce((s, d) => s + d.in_way_from_client, 0)
+  day.frozen_capital = parts.reduce((s, d) => s + d.frozen_capital, 0)
+  day.profit_total = parts.reduce((s, d) => s + d.profit_total, 0)
+  day.ad_spend = parts.reduce((s, d) => s + d.ad_spend, 0)
+  day.ad_orders_qty = parts.reduce((s, d) => s + d.ad_orders_qty, 0)
+  day.return_fee_rub = parts.reduce((s, d) => s + d.return_fee_rub, 0)
+  day.open_card_count = parts.reduce((s, d) => s + d.open_card_count, 0)
+  day.ad_clicks_count = parts.reduce((s, d) => s + d.ad_clicks_count, 0)
+  day.organic_clicks_count = parts.reduce((s, d) => s + d.organic_clicks_count, 0)
+  day.add_to_cart_count = parts.reduce((s, d) => s + d.add_to_cart_count, 0)
+  day.storage_per_unit = parts.reduce((s, d) => s + d.storage_per_unit, 0)
+
+  // Реклама по типам
+  day.ad_total = aggregateAd(parts.map(p => p.ad_total))
+  day.ad_search = aggregateAd(parts.map(p => p.ad_search))
+  day.ad_recommend = aggregateAd(parts.map(p => p.ad_recommend))
+
+  // Взвешенные средние (по orders_qty или orders_rub) для цен/процентов
+  const totalOrdersQty = day.orders_qty
+  const totalOrdersRub = day.orders_rub
+  const weightedByOrders = (key: keyof RnPDayMetrics) => {
+    if (totalOrdersQty === 0) {
+      const nz = parts.filter(p => (p[key] as number) > 0)
+      return nz.length ? nz.reduce((s, p) => s + (p[key] as number), 0) / nz.length : 0
+    }
+    return parts.reduce((s, p) => s + (p[key] as number) * p.orders_qty, 0) / totalOrdersQty
+  }
+  day.price_before_spp = weightedByOrders('price_before_spp')
+  day.price_after_spp = weightedByOrders('price_after_spp')
+  day.spp_pct = weightedByOrders('spp_pct')
+  day.buyout_rate_pct = weightedByOrders('buyout_rate_pct')
+  day.commission_per_unit = weightedByOrders('commission_per_unit')
+  day.logistics_per_unit = weightedByOrders('logistics_per_unit')
+  day.cogs_per_unit = weightedByOrders('cogs_per_unit')
+  day.tax_usn_per_unit = weightedByOrders('tax_usn_per_unit')
+  day.tax_nds_per_unit = weightedByOrders('tax_nds_per_unit')
+  day.tax_total_per_unit = weightedByOrders('tax_total_per_unit')
+  day.profit_per_unit = weightedByOrders('profit_per_unit')
+
+  // Пересчитываемые показатели
+  day.commission_pct = totalOrdersRub > 0
+    ? (parts.reduce((s, p) => s + p.commission_pct * p.orders_rub, 0) / totalOrdersRub)
+    : 0
+  day.margin_pct = day.forecast_sales_rub > 0
+    ? (day.profit_total / day.forecast_sales_rub) * 100
+    : 0
+  day.roi_pct = (day.cogs_per_unit > 0 && day.profit_per_unit !== 0)
+    ? (day.profit_per_unit / day.cogs_per_unit) * 100
+    : 0
+  day.drr_orders_pct = totalOrdersRub > 0 ? (day.ad_spend / totalOrdersRub) * 100 : 0
+  day.drr_sales_pct = day.forecast_sales_rub > 0 ? (day.ad_spend / day.forecast_sales_rub) * 100 : 0
+
+  // Воронка
+  day.organic_clicks_pct = day.open_card_count > 0
+    ? (day.organic_clicks_count / day.open_card_count) * 100 : 0
+  day.cart_from_card_pct = day.open_card_count > 0
+    ? (day.add_to_cart_count / day.open_card_count) * 100 : 0
+  day.order_from_cart_pct = day.add_to_cart_count > 0
+    ? (day.orders_qty / day.add_to_cart_count) * 100 : 0
+
+  return day
+}
+
+const CHANNEL_META: Record<string, { label: string; color: string }> = {
+  wb: { label: 'Wildberries', color: 'from-purple-50 to-white' },
+  ozon: { label: 'Ozon', color: 'from-blue-50 to-white' },
+  lamoda: { label: 'Lamoda', color: 'from-pink-50 to-white' },
+}
+
+function buildChannelAggregate(skus: RnPPivotSKU[], channelType: string, days: string[]): RnPPivotSKU {
+  const daysMap: Record<string, RnPDayMetrics> = {}
+  for (const ds of days) daysMap[ds] = aggregateChannelDay(skus, ds)
+
+  const totalOrdersQty = skus.reduce((s, r) => s + r.total_orders_qty, 0)
+  const totalOrdersRub = skus.reduce((s, r) => s + r.total_orders_rub, 0)
+  const totalSalesQty = skus.reduce((s, r) => s + r.total_sales_qty, 0)
+  const totalReturnsQty = skus.reduce((s, r) => s + r.total_returns_qty, 0)
+  const totalStock = skus.reduce((s, r) => s + r.current_stock, 0)
+
+  // Взвешенные средние по orders_rub
+  const w = (key: keyof RnPPivotSKU) =>
+    totalOrdersRub > 0
+      ? skus.reduce((s, r) => s + (r[key] as number) * r.total_orders_rub, 0) / totalOrdersRub
+      : (skus.length ? skus.reduce((s, r) => s + (r[key] as number), 0) / skus.length : 0)
+
+  const meta = CHANNEL_META[channelType] ?? { label: channelType.toUpperCase(), color: 'from-gray-50 to-white' }
+
+  return {
+    sku_id: -1,
+    channel_id: -1,
+    seller_article: `ИТОГО ${meta.label}`,
+    name: `Сводная по ${meta.label}`,
+    channel_type: channelType,
+    channel_name: meta.label,
+    wb_article: '',
+    photo_url: '',
+    total_orders_qty: totalOrdersQty,
+    total_orders_rub: totalOrdersRub,
+    total_sales_qty: totalSalesQty,
+    total_returns_qty: totalReturnsQty,
+    avg_price_before_spp: w('avg_price_before_spp'),
+    avg_price_after_spp: w('avg_price_after_spp'),
+    avg_spp_pct: w('avg_spp_pct'),
+    current_stock: totalStock,
+    turnover_days: 0,
+    buyout_rate_pct: w('buyout_rate_pct'),
+    buyout_rate_is_manual: false,
+    logistics_per_unit_avg: w('logistics_per_unit_avg'),
+    logistics_is_manual: false,
+    commission_pct_avg: w('commission_pct_avg'),
+    commission_is_manual: false,
+    avg_margin_pct: w('avg_margin_pct'),
+    cogs_per_unit: w('cogs_per_unit'),
+    wb_rating: null,
+    days: daysMap,
+  }
+}
+
+// ── Сводная карточка по каналу ──────────────────────────────────────────────
+
+function ChannelAggregateCard({ agg, days, externalCollapsed }: {
+  agg: RnPPivotSKU
+  days: string[]
+  externalCollapsed?: boolean
+}) {
+  const [collapsed, setCollapsed] = useState(true)
+  const [costsOpen, setCostsOpen] = useState(false)
+  useEffect(() => {
+    if (externalCollapsed !== undefined) setCollapsed(externalCollapsed)
+  }, [externalCollapsed])
+
+  const headerRef = useRef<HTMLDivElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const handleBodyScroll = useCallback(() => {
+    if (headerRef.current && bodyRef.current) {
+      headerRef.current.scrollLeft = bodyRef.current.scrollLeft
+    }
+  }, [])
+
+  const colTotalWidth = COL_W.label + COL_W.total + COL_W.bar + COL_W.day * days.length
+  const noop = () => {}
+  const meta = CHANNEL_META[agg.channel_type] ?? { label: agg.channel_name, color: 'from-gray-50 to-white' }
+
+  const totalProfit = Object.values(agg.days).reduce((s, d) => s + (d.profit_total ?? 0), 0)
+  const totalAdSpend = Object.values(agg.days).reduce((s, d) => s + (d.ad_spend ?? 0), 0)
+
+  return (
+    <div className="bg-white rounded-xl border-2 border-indigo-200 shadow-sm overflow-clip">
+      <div className={`flex items-center gap-3 px-4 py-3 border-b border-gray-200 bg-gradient-to-r ${meta.color}`}>
+        <div className="w-12 h-12 rounded-lg bg-white border border-gray-200 flex items-center justify-center shrink-0">
+          <ChannelIcon type={agg.channel_type as 'wb' | 'ozon'} size={28} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-bold text-sm px-2 py-0.5 rounded bg-indigo-100 text-indigo-800">
+              ИТОГО · {meta.label}
+            </span>
+            <span className="text-xs text-gray-500">сводная по всем артикулам канала</span>
+          </div>
+        </div>
+        <div className="hidden lg:flex items-center gap-5 text-sm">
+          <div className="text-right">
+            <div className="text-[10px] text-gray-400 uppercase tracking-wide">Заказы</div>
+            <div className="font-bold text-gray-800">{fmtNum(agg.total_orders_qty)} шт</div>
+            <div className="text-[10px] text-gray-500">{fmtRub(agg.total_orders_rub)} ₽</div>
+          </div>
+          <div className="text-right">
+            <div className="text-[10px] text-gray-400 uppercase tracking-wide">Маржа</div>
+            <div className={`font-bold ${agg.avg_margin_pct >= 20 ? 'text-green-600' : agg.avg_margin_pct >= 10 ? 'text-yellow-600' : 'text-red-500'}`}>
+              {agg.avg_margin_pct.toFixed(1)}%
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-[10px] text-gray-400 uppercase tracking-wide">Прогноз. прибыль</div>
+            <div className={`font-bold ${totalProfit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+              {fmtRub(totalProfit)} ₽
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-[10px] text-gray-400 uppercase tracking-wide">Бюджет РК</div>
+            <div className="font-bold text-gray-800">{fmtRub(totalAdSpend)} ₽</div>
+          </div>
+          <div className="text-right">
+            <div className="text-[10px] text-gray-400 uppercase tracking-wide">Остаток</div>
+            <div className="font-bold text-gray-800">{fmtNum(agg.current_stock)} шт</div>
+          </div>
+          <div className="text-right">
+            <div className="text-[10px] text-gray-400 uppercase tracking-wide">Ср. выкуп</div>
+            <div className="font-bold text-gray-800">{agg.buyout_rate_pct.toFixed(1)}%</div>
+          </div>
+        </div>
+        <button
+          onClick={() => setCollapsed(v => !v)}
+          className="ml-2 w-7 h-7 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors text-xs"
+        >
+          {collapsed ? '▶' : '▼'}
+        </button>
+      </div>
+
+      {!collapsed && (
+        <div>
+          <div ref={headerRef} className="sticky top-0 z-20 overflow-hidden border-b border-gray-200">
+            <table className="text-xs border-collapse" style={{ tableLayout: 'fixed', width: colTotalWidth }}>
+              <colgroup>
+                <col style={{ width: COL_W.label }} />
+                <col style={{ width: COL_W.total }} />
+                <col style={{ width: COL_W.bar }} />
+                {days.map(d => <col key={d} style={{ width: COL_W.day }} />)}
+              </colgroup>
+              <thead>
+                <tr className="bg-gray-100 shadow-[0_1px_0_0_#e5e7eb,0_2px_4px_0_rgba(0,0,0,0.06)]">
+                  <th className="sticky left-0 z-30 text-left px-4 py-2 font-medium text-gray-500 bg-gray-100 border-r border-gray-200">Показатель</th>
+                  <th className="text-right px-3 py-2 font-semibold text-gray-600 bg-gray-100">Итого</th>
+                  <th className="text-center px-2 py-2 font-medium text-gray-400 bg-gray-100">▓▓</th>
+                  {days.map(d => (
+                    <th key={d} className="text-right px-3 py-2 font-medium text-gray-600 whitespace-nowrap bg-gray-100">
+                      {formatDayLabel(d)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+            </table>
+          </div>
+
+          <div ref={bodyRef} className="overflow-x-auto" onScroll={handleBodyScroll}>
+            <table className="text-xs border-collapse" style={{ tableLayout: 'fixed', width: colTotalWidth }}>
+              <colgroup>
+                <col style={{ width: COL_W.label }} />
+                <col style={{ width: COL_W.total }} />
+                <col style={{ width: COL_W.bar }} />
+                {days.map(d => <col key={d} style={{ width: COL_W.day }} />)}
+              </colgroup>
+              <tbody>
+                <tr className="bg-indigo-50/70 border-b border-indigo-100">
+                  <td colSpan={3 + days.length} className="px-4 py-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-indigo-500 text-xs">⊞</span>
+                      <span className="text-xs font-semibold text-indigo-700">Юнит-экономика (сводная)</span>
+                    </div>
+                  </td>
+                </tr>
+                <MetricsTable metrics={MAIN_METRICS} sku={agg} days={days} onSaveBuyout={noop} onSaveLogistics={noop} onSaveCommission={noop} />
+              </tbody>
+              <tbody>
+                <tr className="border-t border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => setCostsOpen(v => !v)}>
+                  <td colSpan={3 + days.length} className="px-4 py-2">
+                    <div className="flex items-center gap-2 font-semibold text-gray-500">
+                      <span className={`transition-transform ${costsOpen ? 'rotate-90' : ''} inline-block`}>▶</span>
+                      Структура затрат (сводная)
+                    </div>
+                  </td>
+                </tr>
+                {costsOpen && (
+                  <MetricsTable metrics={COSTS_METRICS} sku={agg} days={days} onSaveBuyout={noop} onSaveLogistics={noop} onSaveCommission={noop} />
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Главная страница ────────────────────────────────────────────────────────
 
 function defaultRange(): DateRange {
@@ -1112,6 +1439,29 @@ export default function RnPPage() {
           Нет данных. Выполните синхронизацию с WB в разделе <strong>Интеграции</strong>.
         </div>
       )}
+
+      {/* ── Сводные блоки по маркетплейсам ─────────── */}
+      {data && filtered.length > 0 && (() => {
+        const byChannel = new Map<string, RnPPivotSKU[]>()
+        for (const s of filtered) {
+          if (!byChannel.has(s.channel_type)) byChannel.set(s.channel_type, [])
+          byChannel.get(s.channel_type)!.push(s)
+        }
+        // Показываем сводку только если каналов больше 1 ИЛИ выбран фильтр
+        if (byChannel.size === 0) return null
+        return (
+          <div className="space-y-3">
+            {Array.from(byChannel.entries()).map(([ch, skus]) => (
+              <ChannelAggregateCard
+                key={`agg-${ch}`}
+                agg={buildChannelAggregate(skus, ch, data.days)}
+                days={data.days}
+                externalCollapsed={allCollapsed}
+              />
+            ))}
+          </div>
+        )
+      })()}
 
       {/* ── Список SKU ───────────────────────────── */}
       <div className="space-y-4">
