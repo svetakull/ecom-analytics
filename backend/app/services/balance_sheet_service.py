@@ -56,24 +56,48 @@ def _cogs_map(db: Session, as_of: date) -> dict[int, float]:
 
 
 def _stock_snapshot(db: Session, as_of: date) -> dict:
-    """Остатки на дату: qty, in_way_to, in_way_from по SKU."""
+    """Остатки на дату: qty, in_way_to, in_way_from по SKU.
+    Разделение: MP (маркетплейсовые склады) vs own (Свой склад)."""
+    from app.models.catalog import Warehouse
     last_date = db.query(func.max(Stock.date)).filter(Stock.date <= as_of).scalar()
     if not last_date:
-        return {"qty": {}, "in_way_to": {}, "in_way_from": {}}
+        return {"qty": {}, "in_way_to": {}, "in_way_from": {}, "qty_own": {}}
 
-    rows = db.query(
+    # ID складов "Свой склад"
+    own_wh_ids = {w.id for w in db.query(Warehouse).filter(
+        (Warehouse.name == "Свой склад") | (Warehouse.name.ilike("%собств%"))
+    ).all()}
+
+    # MP stocks
+    mp_rows = db.query(
         Stock.sku_id,
         func.sum(Stock.qty).label("qty"),
         func.sum(Stock.in_way_to_client).label("to_client"),
         func.sum(Stock.in_way_from_client).label("from_client"),
-    ).filter(Stock.date == last_date).group_by(Stock.sku_id).all()
+    ).filter(Stock.date == last_date)
+    if own_wh_ids:
+        mp_rows = mp_rows.filter(~Stock.warehouse_id.in_(own_wh_ids))
+    mp_rows = mp_rows.group_by(Stock.sku_id).all()
 
     qty, to_cl, from_cl = {}, {}, {}
-    for r in rows:
+    for r in mp_rows:
         qty[r.sku_id] = int(r.qty or 0)
         to_cl[r.sku_id] = int(r.to_client or 0)
         from_cl[r.sku_id] = int(r.from_client or 0)
-    return {"qty": qty, "in_way_to": to_cl, "in_way_from": from_cl}
+
+    # Own warehouse stocks (отдельно)
+    qty_own = {}
+    if own_wh_ids:
+        own_rows = db.query(
+            Stock.sku_id, func.sum(Stock.qty).label("qty"),
+        ).filter(
+            Stock.date == last_date,
+            Stock.warehouse_id.in_(own_wh_ids),
+        ).group_by(Stock.sku_id).all()
+        for r in own_rows:
+            qty_own[r.sku_id] = int(r.qty or 0)
+
+    return {"qty": qty, "in_way_to": to_cl, "in_way_from": from_cl, "qty_own": qty_own}
 
 
 def _cash_balances(db: Session, as_of: date) -> dict[str, float]:
@@ -275,20 +299,16 @@ def _calc_section(db: Session, as_of: date, cogs: dict, stocks: dict) -> dict:
     stock_value = sum(stocks["qty"].get(sid, 0) * cogs.get(sid, 0) for sid in set(stocks["qty"]) | set(cogs))
     assets_lines.append({"key": "stock_mp", "name": "Товары на складах МП", "amount": round(stock_value, 2), "source": "auto", "editable": False, "level": 0, "bold": False})
 
-    # 2b. Товары на собственном складе (ручной ввод)
-    own_warehouse_rec = db.query(BalanceSheetManualEntry).filter(
-        BalanceSheetManualEntry.section == "assets",
-        BalanceSheetManualEntry.category == "own_warehouse",
-        BalanceSheetManualEntry.date <= as_of,
-    ).order_by(BalanceSheetManualEntry.date.desc(), BalanceSheetManualEntry.id.desc()).first()
-    own_warehouse_val = float(own_warehouse_rec.amount) if own_warehouse_rec else 0
-    if own_warehouse_val > 0:
+    # 2b. Товары на собственном складе (из Stock с warehouse='Свой склад')
+    own_stock_value = sum(stocks.get("qty_own", {}).get(sid, 0) * cogs.get(sid, 0)
+                          for sid in stocks.get("qty_own", {}))
+    if own_stock_value > 0:
         assets_lines.append({
             "key": "stock_own", "name": "Товары на собственном складе",
-            "amount": round(own_warehouse_val, 2),
-            "source": "manual", "editable": True, "level": 0, "bold": False,
-            "entry_id": own_warehouse_rec.id if own_warehouse_rec else None,
+            "amount": round(own_stock_value, 2),
+            "source": "auto", "editable": False, "level": 0, "bold": False,
         })
+    own_warehouse_val = own_stock_value
 
     # 3. В пути к клиенту
     transit_to = sum(stocks["in_way_to"].get(sid, 0) * cogs.get(sid, 0) for sid in set(stocks["in_way_to"]) | set(cogs))
