@@ -246,15 +246,15 @@ def update_payment(
 
 @router.get("/summary-by-period")
 def summary_by_period(
-    period: str = "month",  # month | week
+    period: str = "month",  # year | month | week
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
     """Сводная таблица платежей по кредитам сгруппированная по периодам.
-    period: 'month' или 'week'. Возвращает per-credit + total строки."""
-    trunc_fn = 'month' if period == 'month' else 'week'
+    period: 'year', 'month' или 'week'. Возвращает per-credit + total строки."""
+    trunc_fn = period if period in ('year', 'month', 'week') else 'month'
     q = db.query(
         CreditPayment.credit_id,
         func.date_trunc(trunc_fn, CreditPayment.payment_date).label('period'),

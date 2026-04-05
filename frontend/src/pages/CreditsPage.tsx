@@ -208,7 +208,7 @@ interface PeriodRow {
 }
 
 function PeriodSummary() {
-  const [granularity, setGranularity] = useState<'month' | 'week'>('month')
+  const [granularity, setGranularity] = useState<'year' | 'month' | 'week'>('month')
   const [showDetails, setShowDetails] = useState(false)
   const { data: rows = [], isLoading } = useQuery<PeriodRow[]>({
     queryKey: ['credits-summary', granularity],
@@ -217,6 +217,9 @@ function PeriodSummary() {
 
   const fmtPeriod = (p: string) => {
     const d = new Date(p + 'T00:00:00')
+    if (granularity === 'year') {
+      return String(d.getFullYear())
+    }
     if (granularity === 'month') {
       return d.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })
     }
@@ -240,9 +243,10 @@ function PeriodSummary() {
           </label>
           <select
             value={granularity}
-            onChange={(e) => setGranularity(e.target.value as 'month' | 'week')}
+            onChange={(e) => setGranularity(e.target.value as 'year' | 'month' | 'week')}
             className="border border-gray-200 rounded px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
           >
+            <option value="year">По годам</option>
             <option value="month">По месяцам</option>
             <option value="week">По неделям</option>
           </select>
@@ -253,46 +257,46 @@ function PeriodSummary() {
       ) : rows.length === 0 ? (
         <div className="px-4 py-6 text-sm text-gray-400 text-center">Нет платежей</div>
       ) : (
-        <table className="w-full text-sm">
+        <table className="text-sm" style={{ width: 'auto' }}>
           <thead>
             <tr className="bg-gray-50 border-b border-gray-100 text-gray-500">
-              <th className="text-left px-4 py-2 font-medium text-xs">Период</th>
-              <th className="text-right px-3 py-2 font-medium text-xs">Тело</th>
-              <th className="text-right px-3 py-2 font-medium text-xs">Проценты</th>
-              <th className="text-right px-3 py-2 font-medium text-xs">Платёж итого</th>
-              <th className="text-right px-3 py-2 font-medium text-xs">Кол-во</th>
+              <th className="text-left px-4 py-2 font-medium text-xs whitespace-nowrap">Период</th>
+              <th className="text-right px-3 py-2 font-medium text-xs whitespace-nowrap">Тело</th>
+              <th className="text-right px-3 py-2 font-medium text-xs whitespace-nowrap">Проценты</th>
+              <th className="text-right px-3 py-2 font-medium text-xs whitespace-nowrap">Платёж итого</th>
+              <th className="text-right px-3 py-2 font-medium text-xs whitespace-nowrap">Кол-во</th>
             </tr>
           </thead>
           <tbody>
             {rows.map(r => (
               <>
                 <tr key={r.period} className="border-b border-gray-50 bg-white hover:bg-gray-50/50">
-                  <td className="px-4 py-2 font-medium text-gray-800">{fmtPeriod(r.period)}</td>
-                  <td className="text-right px-3 py-2 tabular-nums">{fmt(r.sum_body)}</td>
-                  <td className="text-right px-3 py-2 tabular-nums text-gray-500">{fmt(r.sum_interest)}</td>
-                  <td className="text-right px-3 py-2 tabular-nums font-semibold">{fmt(r.sum_total)}</td>
-                  <td className="text-right px-3 py-2 tabular-nums text-gray-400 text-xs">
+                  <td className="px-4 py-2 font-medium text-gray-800 whitespace-nowrap">{fmtPeriod(r.period)}</td>
+                  <td className="text-right px-3 py-2 tabular-nums whitespace-nowrap">{fmt(r.sum_body)}</td>
+                  <td className="text-right px-3 py-2 tabular-nums text-gray-500 whitespace-nowrap">{fmt(r.sum_interest)}</td>
+                  <td className="text-right px-3 py-2 tabular-nums font-semibold whitespace-nowrap">{fmt(r.sum_total)}</td>
+                  <td className="text-right px-3 py-2 tabular-nums text-gray-400 text-xs whitespace-nowrap">
                     {r.credits.reduce((s, c) => s + c.count, 0)}
                   </td>
                 </tr>
                 {showDetails && r.credits.map(c => (
                   <tr key={`${r.period}-${c.credit_id}`} className="border-b border-gray-50 bg-gray-50/30">
-                    <td className="pl-10 pr-4 py-1.5 text-xs text-gray-500 truncate max-w-[300px]" title={c.credit_name}>
+                    <td className="pl-10 pr-4 py-1.5 text-xs text-gray-500 whitespace-nowrap" title={c.credit_name}>
                       {c.credit_name}
                     </td>
-                    <td className="text-right px-3 py-1.5 tabular-nums text-xs">{fmt(c.body)}</td>
-                    <td className="text-right px-3 py-1.5 tabular-nums text-xs text-gray-500">{fmt(c.interest)}</td>
-                    <td className="text-right px-3 py-1.5 tabular-nums text-xs">{fmt(c.total)}</td>
-                    <td className="text-right px-3 py-1.5 tabular-nums text-xs text-gray-400">{c.count}</td>
+                    <td className="text-right px-3 py-1.5 tabular-nums text-xs whitespace-nowrap">{fmt(c.body)}</td>
+                    <td className="text-right px-3 py-1.5 tabular-nums text-xs text-gray-500 whitespace-nowrap">{fmt(c.interest)}</td>
+                    <td className="text-right px-3 py-1.5 tabular-nums text-xs whitespace-nowrap">{fmt(c.total)}</td>
+                    <td className="text-right px-3 py-1.5 tabular-nums text-xs text-gray-400 whitespace-nowrap">{c.count}</td>
                   </tr>
                 ))}
               </>
             ))}
             <tr className="bg-indigo-50/50 border-t-2 border-t-indigo-100">
-              <td className="px-4 py-2 font-bold text-gray-900">ИТОГО</td>
-              <td className="text-right px-3 py-2 tabular-nums font-bold">{fmt(grandBody)}</td>
-              <td className="text-right px-3 py-2 tabular-nums font-bold text-gray-700">{fmt(grandInterest)}</td>
-              <td className="text-right px-3 py-2 tabular-nums font-bold">{fmt(grandTotal)}</td>
+              <td className="px-4 py-2 font-bold text-gray-900 whitespace-nowrap">ИТОГО</td>
+              <td className="text-right px-3 py-2 tabular-nums font-bold whitespace-nowrap">{fmt(grandBody)}</td>
+              <td className="text-right px-3 py-2 tabular-nums font-bold text-gray-700 whitespace-nowrap">{fmt(grandInterest)}</td>
+              <td className="text-right px-3 py-2 tabular-nums font-bold whitespace-nowrap">{fmt(grandTotal)}</td>
               <td></td>
             </tr>
           </tbody>
