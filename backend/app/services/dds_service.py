@@ -301,9 +301,11 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
     new_products = _manual(manual, "new_products")
     pvz = _manual(manual, "pvz")
 
+    delivery_rf = _manual(manual, "delivery_rf")
+
     itogo_rashody = (
         content + external_ads + buyout_services + buyout_goods +
-        fot + outsource + warehouse + courier + travel +
+        fot + outsource + warehouse + courier + travel + delivery_rf +
         bank_fees + office + equipment + education +
         subscriptions + new_products + pvz
     )
@@ -320,8 +322,7 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
     ff = _manual(manual, "ff")
     ff_storage = _manual(manual, "ff_storage")
     delivery_mp = _manual(manual, "delivery_mp")
-    delivery_rf = _manual(manual, "delivery_rf")
-    itogo_avansy = purchase_china + delivery_china + ff + ff_storage + delivery_mp + delivery_rf
+    itogo_avansy = purchase_china + delivery_china + ff + ff_storage + delivery_mp
 
     # === V. КРЕДИТЫ И УДЕРЖАНИЯ ===
     wb_deductions = _manual(manual, "wb_deductions")
@@ -387,6 +388,7 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
         {"key": "subscriptions", "name": "Подписка на сервисы", "amount": round(subscriptions, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "subscriptions"},
         {"key": "new_products", "name": "Новинки", "amount": round(new_products, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "new_products"},
         {"key": "pvz", "name": "ПВЗ расходы", "amount": round(pvz, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "pvz"},
+        {"key": "delivery_rf", "name": "Доставка внутри РФ", "amount": round(delivery_rf, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "delivery_rf"},
         {"key": "itogo_rashody", "name": "Итого расходы", "amount": round(itogo_rashody, 2), "level": 0, "bold": True, "editable": False, "section": "expenses", "category": None},
 
         # III. НАЛОГИ
@@ -403,7 +405,6 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
         {"key": "ff", "name": "ФФ", "amount": round(ff, 2), "level": 1, "bold": False, "editable": True, "section": "advances", "category": "ff"},
         {"key": "ff_storage", "name": "Хранение на ФФ", "amount": round(ff_storage, 2), "level": 1, "bold": False, "editable": True, "section": "advances", "category": "ff_storage"},
         {"key": "delivery_mp", "name": "Доставка до МП", "amount": round(delivery_mp, 2), "level": 1, "bold": False, "editable": True, "section": "advances", "category": "delivery_mp"},
-        {"key": "delivery_rf", "name": "Доставка внутри РФ", "amount": round(delivery_rf, 2), "level": 1, "bold": False, "editable": True, "section": "advances", "category": "delivery_rf"},
         {"key": "itogo_avansy", "name": "Итого авансы", "amount": round(itogo_avansy, 2), "level": 0, "bold": True, "editable": False, "section": "advances", "category": None},
 
         # V. КРЕДИТЫ И УДЕРЖАНИЯ

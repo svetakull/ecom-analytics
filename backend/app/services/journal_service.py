@@ -61,7 +61,7 @@ DDS_CATEGORIES = sorted([
     {"key": "ff", "name": "ФФ (фулфилмент)", "section": "advances"},
     {"key": "ff_storage", "name": "Хранение на ФФ", "section": "advances"},
     {"key": "delivery_mp", "name": "Доставка до МП", "section": "advances"},
-    {"key": "delivery_rf", "name": "Доставка внутри РФ", "section": "advances"},
+    {"key": "delivery_rf", "name": "Доставка внутри РФ", "section": "expenses"},
     # --- КРЕДИТЫ ---
     {"key": "wb_deductions", "name": "Удержания ВБ", "section": "credits"},
     {"key": "bank_credit", "name": "Банковские кредиты", "section": "credits"},
