@@ -379,6 +379,54 @@ def batch_upsert(
 #  IMPORT / EXPORT EXCEL
 # ═══════════════════════════════════════════════════════════════════════
 
+def template_excel() -> bytes:
+    """Пустой шаблон для импорта себестоимости."""
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Себестоимость"
+
+    headers = [
+        "Артикул продавца", "Артикул МП", "Маркетплейс", "Размер",
+        "Себестоим. (default)", "Фулфилмент (default)", "НДС (default)",
+    ]
+    hfill = PatternFill(start_color="2E5090", end_color="2E5090", fill_type="solid")
+    hfont = Font(name="Arial", bold=True, color="FFFFFF", size=10)
+    for col, h in enumerate(headers, 1):
+        c = ws.cell(row=1, column=col, value=h)
+        c.font = hfont
+        c.fill = hfill
+        c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    # Пример строки
+    example = ["5441велюр_шоколад", "445052651", "wb", "", 850, 50, 5]
+    for col, v in enumerate(example, 1):
+        ws.cell(row=2, column=col, value=v).font = Font(italic=True, color="999999")
+
+    # Комментарии
+    notes_row = 4
+    notes = [
+        "Обязательные поля: A (Артикул продавца), B (Артикул МП), C (Маркетплейс)",
+        "Маркетплейс: wb / ozon / lamoda",
+        "Размер — оставить пустым, если без размеров",
+        "Для добавления истории — доп. тройки колонок 'Себестоим. YYYY-MM-DD', 'Фулфилмент YYYY-MM-DD', 'НДС YYYY-MM-DD'",
+    ]
+    for i, n in enumerate(notes):
+        c = ws.cell(row=notes_row + i, column=1, value="# " + n)
+        c.font = Font(italic=True, color="666666", size=9)
+
+    widths = [22, 16, 13, 10, 18, 18, 14]
+    for col, w in enumerate(widths, 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = w
+    ws.row_dimensions[1].height = 30
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
 def export_excel(db: Session, channel_id: int | None = None, marketplace: str | None = None) -> bytes:
     """Экспорт себестоимостей в Excel."""
     import openpyxl

@@ -12,7 +12,7 @@ from app.core.deps import get_current_user
 from app.models.user import User
 from app.services.cost_price_service import (
     list_cost_prices, create_cost_price, update_cost_price, delete_cost_price,
-    resolve_cost, batch_upsert, export_excel, import_excel,
+    resolve_cost, batch_upsert, export_excel, import_excel, template_excel,
 )
 
 router = APIRouter()
@@ -153,6 +153,17 @@ def get_export(
         iter([data]),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=cost_prices.xlsx"},
+    )
+
+
+@router.get("/template")
+def get_template(_: User = Depends(get_current_user)):
+    """Скачать пустой шаблон Excel для импорта себестоимости."""
+    data = template_excel()
+    return StreamingResponse(
+        iter([data]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=cost_prices_template.xlsx"},
     )
 
 

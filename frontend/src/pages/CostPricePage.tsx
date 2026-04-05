@@ -681,6 +681,27 @@ function ImportModal({ marketplace, onClose, onSuccess }: ImportModalProps) {
         </div>
 
         <div className="px-5 py-4">
+          {/* Download template */}
+          {!result && (
+            <div className="mb-3">
+              <button
+                type="button"
+                onClick={async () => {
+                  const resp = await api.get('/cost-prices/template', { responseType: 'blob' })
+                  const url = window.URL.createObjectURL(resp.data)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = 'cost_prices_template.xlsx'
+                  a.click()
+                  window.URL.revokeObjectURL(url)
+                }}
+                className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700 transition-colors"
+              >
+                <Download size={14} />
+                Скачать шаблон Excel
+              </button>
+            </div>
+          )}
           {result ? (
             /* Result report */
             <div>
