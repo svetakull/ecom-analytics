@@ -23,6 +23,7 @@ interface Credit {
   total_paid: number
   payments_count: number
   balance: number
+  future_interest: number
 }
 
 interface Payment {
@@ -80,6 +81,7 @@ export default function CreditsPage() {
 
   const totalPrincipal = credits.reduce((s, c) => s + c.principal, 0)
   const totalBalance = credits.reduce((s, c) => s + c.balance, 0)
+  const totalFutureInterest = credits.reduce((s, c) => s + (c.future_interest || 0), 0)
   const totalPaid = credits.reduce((s, c) => s + c.total_paid, 0)
   const totalInterest = credits.reduce((s, c) => s + c.interest_paid, 0)
 
@@ -103,7 +105,7 @@ export default function CreditsPage() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <SummaryCard label="Всего кредитов" value={String(credits.length)} sub={`${credits.filter(c => c.is_active).length} активных`} />
           <SummaryCard label="Тело всех кредитов" value={fmt(totalPrincipal) + ' ₽'} />
-          <SummaryCard label="Остаток" value={fmt(totalBalance) + ' ₽'} color="text-red-600" />
+          <SummaryCard label="Остаток + проценты" value={fmt(totalBalance + totalFutureInterest) + ' ₽'} sub={`тело ${fmt(totalBalance)} + % ${fmt(totalFutureInterest)}`} color="text-red-600" />
           <SummaryCard label="Выплачено" value={fmt(totalPaid) + ' ₽'} sub={`в т.ч. % ${fmt(totalInterest)} ₽`} color="text-emerald-600" />
         </div>
       )}

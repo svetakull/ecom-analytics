@@ -89,8 +89,7 @@ def _serialize_payment(p: CreditPayment) -> dict:
 def _summary(db: Session, credit: Credit) -> dict:
     from datetime import date as _date_cls
     today = _date_cls.today()
-    # Считаем только фактические платежи (дата ≤ сегодня),
-    # плановые в будущем не учитываем
+    # Фактические платежи (payment_date <= сегодня)
     agg = (
         db.query(
             func.coalesce(func.sum(CreditPayment.body_amount), 0).label("body_paid"),
@@ -102,9 +101,17 @@ def _summary(db: Session, credit: Credit) -> dict:
         .filter(CreditPayment.payment_date <= today)
         .first()
     )
+    # Плановые (будущие) проценты
+    future_int = (
+        db.query(func.coalesce(func.sum(CreditPayment.interest_amount), 0))
+        .filter(CreditPayment.credit_id == credit.id)
+        .filter(CreditPayment.payment_date > today)
+        .scalar()
+    )
     body_paid = float(agg.body_paid or 0)
     balance = max(float(credit.principal or 0) - body_paid, 0.0)
     return {
+        "future_interest": float(future_int or 0),
         "body_paid": body_paid,
         "interest_paid": float(agg.interest_paid or 0),
         "total_paid": float(agg.total_paid or 0),
