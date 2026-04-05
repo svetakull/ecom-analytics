@@ -81,7 +81,59 @@ def list_cost_prices(
     marketplace: str | None = None,
     article: str | None = None,
 ) -> list[dict]:
-    """Список себестоимостей с группировкой по артикулу."""
+    """Список себестоимостей с группировкой по артикулу.
+
+    Для всех активных связок SKU×канал, у которых нет default-записи,
+    создаёт запись с нулевыми значениями — чтобы на UI показывались
+    все артикулы, даже без заполненной себестоимости.
+    """
+    # ── Определяем целевые каналы для автосоздания ──
+    target_channels = db.query(Channel).filter(Channel.is_active == True)
+    if channel_id:
+        target_channels = target_channels.filter(Channel.id == channel_id)
+    if marketplace:
+        type_map = {"wb": ChannelType.WB, "ozon": ChannelType.OZON, "lamoda": ChannelType.LAMODA}
+        ct = type_map.get(marketplace.lower())
+        if ct:
+            target_channels = target_channels.filter(Channel.type == ct)
+    target_channel_ids = [c.id for c in target_channels.all()]
+
+    # ── Находим SKU×channel без default-записи и создаём нули ──
+    if target_channel_ids:
+        sc_q = db.query(SKUChannel).join(SKU, SKUChannel.sku_id == SKU.id).filter(
+            SKUChannel.is_active == True,
+            SKU.is_active == True,
+            SKUChannel.channel_id.in_(target_channel_ids),
+        )
+        if article:
+            sc_q = sc_q.filter(SKU.seller_article.ilike(f"%{article}%"))
+
+        existing_defaults = {
+            (cp.sku_id, cp.channel_id, cp.size)
+            for cp in db.query(CostPrice).filter(
+                CostPrice.is_default == True,
+                CostPrice.channel_id.in_(target_channel_ids),
+            ).all()
+        }
+
+        created_any = False
+        for sc in sc_q.all():
+            if (sc.sku_id, sc.channel_id, None) not in existing_defaults:
+                db.add(CostPrice(
+                    sku_id=sc.sku_id,
+                    channel_id=sc.channel_id,
+                    size=None,
+                    is_default=True,
+                    effective_from=None,
+                    cost_price=0,
+                    fulfillment=0,
+                    vat_rate=0,
+                ))
+                created_any = True
+        if created_any:
+            db.commit()
+
+    # ── Основная выборка ──
     q = db.query(CostPrice).join(SKU, CostPrice.sku_id == SKU.id)
 
     if channel_id:

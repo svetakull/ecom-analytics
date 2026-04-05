@@ -57,6 +57,9 @@ export default function CostPricePage() {
   const [search, setSearch] = useState('')
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
   const [importOpen, setImportOpen] = useState(false)
+  const [filterNoCost, setFilterNoCost] = useState(false)
+  const [filterNoFulfill, setFilterNoFulfill] = useState(false)
+  const [filterNoVat, setFilterNoVat] = useState(false)
 
   /* ── query ── */
   const { data: rows = [], isLoading, isError } = useQuery<CostPriceGroup[]>({
@@ -115,6 +118,13 @@ export default function CostPricePage() {
 
   const rowKey = (g: CostPriceGroup) => `${g.sku_id}-${g.channel_id}-${g.size ?? ''}`
 
+  const filteredRows = rows.filter((g) => {
+    if (filterNoCost && g.default_cost_price > 0) return false
+    if (filterNoFulfill && g.default_fulfillment > 0) return false
+    if (filterNoVat && g.default_vat_rate > 0) return false
+    return true
+  })
+
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['cost-prices'] })
 
   return (
@@ -171,6 +181,37 @@ export default function CostPricePage() {
             className="pl-9 pr-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 w-64"
           />
         </div>
+
+        {/* Not-filled filters */}
+        <div className="flex items-center gap-3 ml-1">
+          <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={filterNoCost}
+              onChange={(e) => setFilterNoCost(e.target.checked)}
+              className="accent-blue-600"
+            />
+            Себестоимость не заполнена
+          </label>
+          <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={filterNoFulfill}
+              onChange={(e) => setFilterNoFulfill(e.target.checked)}
+              className="accent-blue-600"
+            />
+            Фулфилмент не заполнен
+          </label>
+          <label className="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={filterNoVat}
+              onChange={(e) => setFilterNoVat(e.target.checked)}
+              className="accent-blue-600"
+            />
+            НДС не заполнен
+          </label>
+        </div>
       </div>
 
       {/* Table */}
@@ -197,14 +238,14 @@ export default function CostPricePage() {
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 && (
+              {filteredRows.length === 0 && (
                 <tr>
                   <td colSpan={9} className="text-center py-12 text-gray-400">
                     Нет данных о себестоимости
                   </td>
                 </tr>
               )}
-              {rows.map((group, i) => {
+              {filteredRows.map((group, i) => {
                 const key = rowKey(group)
                 const isOpen = expandedKey === key
                 return (
