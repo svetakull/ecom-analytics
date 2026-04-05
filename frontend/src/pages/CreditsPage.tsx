@@ -471,6 +471,17 @@ function PaymentsTable({ creditId, principal, onAddPayment, onEditPayment }:
               </tr>
             ))}
           </tbody>
+          <tfoot>
+            <tr className="bg-indigo-50/60 border-t-2 border-t-indigo-200 font-bold">
+              <td className="px-4 py-2 text-xs text-gray-900 whitespace-nowrap">ИТОГО ({payments.length})</td>
+              <td className="text-right px-3 py-2 tabular-nums">{fmt(payments.reduce((s, p) => s + p.body_amount, 0))}</td>
+              <td className="text-right px-3 py-2 tabular-nums text-gray-700">{fmt(payments.reduce((s, p) => s + p.interest_amount, 0))}</td>
+              <td className="text-right px-3 py-2 tabular-nums">{fmt(payments.reduce((s, p) => s + p.total_amount, 0))}</td>
+              <td></td>
+              <td></td>
+              <td></td>
+            </tr>
+          </tfoot>
         </table>
       )}
     </div>
