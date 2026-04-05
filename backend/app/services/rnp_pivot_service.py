@@ -124,11 +124,28 @@ def _stock_by_date(db: Session, sku_id: int, target_date: date, channel_type: st
     """
     from app.models.catalog import Warehouse
 
-    latest = (
+    # Фильтр складов по каналу (применяется и к поиску latest, и к агрегации)
+    def apply_warehouse_filter(query):
+        if channel_type == "wb":
+            return query.filter(Warehouse.name == "WB склад")
+        elif channel_type == "ozon":
+            return query.filter(Warehouse.name.like("Ozon%"))
+        elif channel_type == "lamoda":
+            return query.filter(Warehouse.name.like("Lamoda%"))
+        else:
+            return query.filter(
+                (Warehouse.name == "WB склад") |
+                Warehouse.name.like("Ozon%") |
+                Warehouse.name.like("Lamoda%")
+            )
+
+    # Ищем последнюю дату остатков ≤ target_date В РАМКАХ КАНАЛА
+    latest_q = (
         db.query(func.max(Stock.date))
+        .join(Warehouse, Stock.warehouse_id == Warehouse.id)
         .filter(Stock.sku_id == sku_id, Stock.date <= target_date)
-        .scalar()
     )
+    latest = apply_warehouse_filter(latest_q).scalar()
     if not latest:
         return {"qty": 0, "in_way_to_client": 0, "in_way_from_client": 0}
 
@@ -141,21 +158,7 @@ def _stock_by_date(db: Session, sku_id: int, target_date: date, channel_type: st
         .join(Warehouse, Stock.warehouse_id == Warehouse.id)
         .filter(Stock.sku_id == sku_id, Stock.date == latest)
     )
-
-    if channel_type == "wb":
-        # Только агрегированный «WB склад» — НЕ детальные (Невинномысск, Казань и пр.)
-        q = q.filter(Warehouse.name == "WB склад")
-    elif channel_type == "ozon":
-        q = q.filter(Warehouse.name.like("Ozon%"))
-    elif channel_type == "lamoda":
-        q = q.filter(Warehouse.name.like("Lamoda%"))
-    else:
-        # Все каналы — берём только агрегированные (WB склад + Ozon% + Lamoda%)
-        q = q.filter(
-            (Warehouse.name == "WB склад") |
-            Warehouse.name.like("Ozon%") |
-            Warehouse.name.like("Lamoda%")
-        )
+    q = apply_warehouse_filter(q)
 
     row = q.first()
     return {
@@ -167,10 +170,8 @@ def _stock_by_date(db: Session, sku_id: int, target_date: date, channel_type: st
 
 def _current_stock(db: Session, sku_id: int, channel_type: str = None) -> int:
     """Текущий остаток — фильтрация по каналу (агрегированный склад)."""
-    latest = db.query(func.max(Stock.date)).filter(Stock.sku_id == sku_id).scalar()
-    if not latest:
-        return 0
-    return _stock_by_date(db, sku_id, latest, channel_type=channel_type)["qty"]
+    # Используем сегодня — _stock_by_date сам найдёт latest в рамках канала
+    return _stock_by_date(db, sku_id, date.today(), channel_type=channel_type)["qty"]
 
 
 def _build_logistics_map(db: Session, sku_id: int, channel_id: int, start: date, end: date) -> dict:
@@ -443,13 +444,28 @@ def _buyout_rate_period(db: Session, sku_id: int, channel_id: int, ref_date: dat
     Процент выкупа за последние N дней.
     Формула: Продажи / (Продажи + Возвраты + Отказы).
     Возвращает 0.0 если данных нет (признак — показать прочерк / разрешить ручной ввод).
+
+    Источник «Продаж» зависит от канала:
+    - WB: таблица sales (есть записи о выкупе)
+    - Ozon/Lamoda: Order.status=DELIVERED (таблицы sales нет)
     """
     start = ref_date - timedelta(days=days - 1)
 
-    sales = db.query(func.count(Sale.id)).filter(
-        Sale.sku_id == sku_id, Sale.channel_id == channel_id,
-        Sale.sale_date >= start, Sale.sale_date <= ref_date,
-    ).scalar() or 0
+    # Определяем тип канала один раз
+    ch = db.query(Channel.type).filter(Channel.id == channel_id).scalar()
+    use_orders_delivered = ch in (ChannelType.OZON, ChannelType.LAMODA)
+
+    if use_orders_delivered:
+        sales = db.query(func.count(Order.id)).filter(
+            Order.sku_id == sku_id, Order.channel_id == channel_id,
+            Order.order_date >= start, Order.order_date <= ref_date,
+            Order.status == OrderStatus.DELIVERED,
+        ).scalar() or 0
+    else:
+        sales = db.query(func.count(Sale.id)).filter(
+            Sale.sku_id == sku_id, Sale.channel_id == channel_id,
+            Sale.sale_date >= start, Sale.sale_date <= ref_date,
+        ).scalar() or 0
 
     returns = db.query(func.count(Return.id)).filter(
         Return.sku_id == sku_id, Return.channel_id == channel_id,
@@ -639,22 +655,38 @@ def get_rnp_pivot(
             avg_price_after = float(row_orders[3] or 0)
             avg_spp = float(row_orders[4] or 0)
 
-            # Продажи за день
-            row_sales = db.query(
-                func.count(Sale.id),
-                func.sum(Sale.price),
-                func.avg(Sale.commission),
-                func.avg(Sale.logistics),
-            ).filter(
-                Sale.sku_id == sku.id,
-                Sale.channel_id == channel.id,
-                Sale.sale_date == d,
-            ).first()
-
-            s_qty = int(row_sales[0] or 0)
-            s_rub = float(row_sales[1] or 0)
-            avg_commission = float(row_sales[2] or 0)
-            avg_logistics = float(row_sales[3] or 0)
+            # Продажи за день.
+            # Источник зависит от канала: у Ozon/Lamoda нет таблицы sales,
+            # используем Order.status=DELIVERED.
+            if channel.type in (ChannelType.OZON, ChannelType.LAMODA):
+                row_sales = db.query(
+                    func.count(Order.id),
+                    func.sum(Order.price),
+                ).filter(
+                    Order.sku_id == sku.id,
+                    Order.channel_id == channel.id,
+                    Order.order_date == d,
+                    Order.status == OrderStatus.DELIVERED,
+                ).first()
+                s_qty = int(row_sales[0] or 0)
+                s_rub = float(row_sales[1] or 0)
+                avg_commission = 0.0
+                avg_logistics = 0.0
+            else:
+                row_sales = db.query(
+                    func.count(Sale.id),
+                    func.sum(Sale.price),
+                    func.avg(Sale.commission),
+                    func.avg(Sale.logistics),
+                ).filter(
+                    Sale.sku_id == sku.id,
+                    Sale.channel_id == channel.id,
+                    Sale.sale_date == d,
+                ).first()
+                s_qty = int(row_sales[0] or 0)
+                s_rub = float(row_sales[1] or 0)
+                avg_commission = float(row_sales[2] or 0)
+                avg_logistics = float(row_sales[3] or 0)
 
             # Возвраты за день
             r_qty = db.query(func.count(Return.id)).filter(
