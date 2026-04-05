@@ -129,38 +129,21 @@ export default function DDSPage() {
             <tbody>
               {lineNames.map((line: DDSLine, i: number) => {
                 const isTotal = line.bold && (line.key.startsWith('itogo') || line.key === 'chisty_potok' || line.key === 'ostatok_konec')
-                const isAddAction = (line as any).is_action === 'add_account'
+                const isBalanceSection = line.key === 'section_balances'
 
-                if (isAddAction) {
-                  return (
-                    <tr key={line.key} className="border-b border-gray-100">
-                      <td
-                        colSpan={1 + visibleColumns.length}
-                        className="sticky left-0 px-4 py-2 text-sm bg-white border-b border-gray-100"
-                        style={{ paddingLeft: `${16 + line.level * 20}px` }}
-                      >
-                        <button
-                          onClick={async () => {
-                            const name = window.prompt('Название счёта:')
-                            if (!name || !name.trim()) return
-                            const trimmed = name.trim()
-                            // Сохраняем 0 по новому счёту на конец выбранного периода
-                            try {
-                              await api.post('/dds/manual', {
-                                category: `balance_acc:${trimmed}`,
-                                date: dateTo,
-                                amount: 0,
-                              })
-                              queryClient.invalidateQueries({ queryKey: ['dds'] })
-                            } catch (e) { console.error(e) }
-                          }}
-                          className="text-blue-600 hover:text-blue-700 text-sm font-medium"
-                        >
-                          + Добавить счёт
-                        </button>
-                      </td>
-                    </tr>
-                  )
+                const handleAddAccount = async () => {
+                  const name = window.prompt('Название счёта:')
+                  if (!name || !name.trim()) return
+                  const trimmed = name.trim()
+                  try {
+                    await api.post('/dds/manual', {
+                      category: `balance_acc:${trimmed}`,
+                      name: trimmed,
+                      date: dateTo,
+                      amount: 0,
+                    })
+                    queryClient.invalidateQueries({ queryKey: ['dds'] })
+                  } catch (e) { console.error(e) }
                 }
 
                 return (
@@ -182,6 +165,15 @@ export default function DDSPage() {
                       style={{ paddingLeft: `${16 + line.level * 20}px` }}
                     >
                       {line.name}
+                      {isBalanceSection && (
+                        <button
+                          onClick={handleAddAccount}
+                          className="ml-2 inline-flex items-center justify-center w-5 h-5 rounded-full border border-blue-300 text-blue-600 hover:bg-blue-50 hover:border-blue-500 text-sm leading-none transition-colors"
+                          title="Добавить счёт"
+                        >
+                          +
+                        </button>
+                      )}
                     </td>
                     {visibleColumns.map((col: any) => {
                       const colLine = col.lines?.find((l: DDSLine) => l.key === line.key)
