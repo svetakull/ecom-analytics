@@ -156,7 +156,7 @@ def create_entry(db: Session, data: dict, user_id: int) -> dict:
 
 
 def update_entry(db: Session, entry_id: int, data: dict) -> dict:
-    """Обновить операцию журнала."""
+    """Обновить операцию журнала + пересинхронизировать в ДДС."""
     entry = db.query(JournalEntry).filter(JournalEntry.id == entry_id).first()
     if not entry:
         return None
@@ -167,6 +167,15 @@ def update_entry(db: Session, entry_id: int, data: dict) -> dict:
 
     db.commit()
     db.refresh(entry)
+
+    # Пересинкать в ДДС: удалить старые связанные записи и создать заново
+    ref_name = f"journal_{entry.id}"
+    db.query(DDSManualEntry).filter(DDSManualEntry.name.like(f"{ref_name}%")).delete(synchronize_session=False)
+    db.query(PaymentCalendarEntry).filter(PaymentCalendarEntry.name.like(f"{ref_name}%")).delete(synchronize_session=False)
+    db.commit()
+    _sync_to_dds(db, entry)
+    db.commit()
+
     return _serialize(entry)
 
 
