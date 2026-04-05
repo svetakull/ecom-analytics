@@ -31,10 +31,27 @@ interface Props {
 const fmt = (n: number) =>
   n.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
+const BANK_OPTIONS = [
+  'Сбербанк',
+  'Тинькофф',
+  'Точка',
+  'Альфа-Банк',
+  'ВТБ',
+  'Райффайзен',
+  'Модульбанк',
+  'Открытие',
+  'Газпромбанк',
+  'Росбанк',
+  'Промсвязьбанк',
+  'Юникредит',
+  'Другой банк',
+]
+
 export default function StatementUploadModal({ open, onClose }: Props) {
   const [dragActive, setDragActive] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<PreviewData | null>(null)
+  const [selectedBank, setSelectedBank] = useState<string>('')
   const [editedCategories, setEditedCategories] = useState<Record<number, string>>({})
   const [skippedRows, setSkippedRows] = useState<Set<number>>(new Set())
   const [error, setError] = useState('')
@@ -79,6 +96,11 @@ export default function StatementUploadModal({ open, onClose }: Props) {
       setPreview(data)
       setEditedCategories({})
       setError('')
+      // Предзаполняем автоопределённым банком, если пользователь ещё не выбрал
+      if (!selectedBank && data.bank_name) {
+        const match = BANK_OPTIONS.find((b) => b === data.bank_name)
+        setSelectedBank(match || BANK_OPTIONS[BANK_OPTIONS.length - 1])
+      }
     },
     onError: () => {
       setError('Ошибка загрузки файла. Проверьте формат (.xlsx или .csv).')
@@ -88,7 +110,7 @@ export default function StatementUploadModal({ open, onClose }: Props) {
   const confirmMutation = useMutation({
     mutationFn: async () => {
       if (!preview) return Promise.reject()
-      const accountName = preview.bank_name || 'Банковская выписка'
+      const accountName = selectedBank || preview.bank_name || 'Банковская выписка'
       const entries = preview.rows
         .filter((row) => !skippedRows.has(row.row_index))
         .map((row) => ({
@@ -114,6 +136,7 @@ export default function StatementUploadModal({ open, onClose }: Props) {
   const handleClose = () => {
     setFile(null)
     setPreview(null)
+    setSelectedBank('')
     setEditedCategories({})
     setSkippedRows(new Set())
     setError('')
@@ -217,7 +240,7 @@ export default function StatementUploadModal({ open, onClose }: Props) {
           {/* Preview table */}
           {preview && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
                 <div className="text-sm text-gray-600">
                   Найдено строк: <span className="font-medium">{preview.total_rows}</span>
                   {' | '}
@@ -225,6 +248,19 @@ export default function StatementUploadModal({ open, onClose }: Props) {
                   <span className="font-medium text-emerald-600">
                     {preview.auto_classified_count}
                   </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-gray-600">Банк:</label>
+                  <select
+                    value={selectedBank}
+                    onChange={(e) => setSelectedBank(e.target.value)}
+                    className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                  >
+                    <option value="">— Выберите —</option>
+                    {BANK_OPTIONS.map((b) => (
+                      <option key={b} value={b}>{b}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
