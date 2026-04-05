@@ -94,12 +94,12 @@ def get_dds(
             m["ppvz_for_pay_wb"] += ppvz
         elif ch_type == "ozon":
             m["ppvz_for_pay_ozon"] += ppvz
-        # Поступление товара по цене закупки
-        if row.sku_id not in cogs_cache:
-            cogs_cache[row.sku_id] = _cogs_for_sku(row.sku_id)
-        cogs = cogs_cache[row.sku_id]
-        m["purchase_rub"] += net_qty * cogs
-        m["purchase_qty"] += net_qty
+        # Поступление товара по цене закупки — пока отключено, логика будет позже
+        # if row.sku_id not in cogs_cache:
+        #     cogs_cache[row.sku_id] = _cogs_for_sku(row.sku_id)
+        # cogs = cogs_cache[row.sku_id]
+        # m["purchase_rub"] += net_qty * cogs
+        # m["purchase_qty"] += net_qty
 
     # --- Ручные данные из DDSManualEntry ---
     manual_q = db.query(
@@ -134,22 +134,30 @@ def get_dds(
     ).order_by(DDSBalance.date)
     balance_rows = balance_q.all()
 
-    # --- Остаток на складе по цене закупки ---
+    # --- Остаток на складе по цене закупки (на конец КАЖДОЙ недели периода) ---
     from app.models.inventory import Stock
     from app.models.catalog import SKU
-    stock_total_rub = 0.0
-    stock_total_qty = 0
-    latest_stock_date = db.query(func.max(Stock.date)).scalar()
-    if latest_stock_date:
-        stock_rows = db.query(Stock.sku_id, func.sum(Stock.qty).label("qty")).filter(
-            Stock.date == latest_stock_date
+
+    def _stock_on_date(end_date: date) -> tuple[float, int]:
+        """Остаток на складе на конкретную дату (ближайшая ≤ end_date)."""
+        latest = db.query(func.max(Stock.date)).filter(Stock.date <= end_date).scalar()
+        if not latest:
+            return 0.0, 0
+        rows = db.query(Stock.sku_id, func.sum(Stock.qty).label("qty")).filter(
+            Stock.date == latest
         ).group_by(Stock.sku_id).all()
-        for sr in stock_rows:
+        total_rub = 0.0
+        total_qty = 0
+        for sr in rows:
             if sr.sku_id not in cogs_cache:
                 cogs_cache[sr.sku_id] = _cogs_for_sku(sr.sku_id)
             qty = int(sr.qty or 0)
-            stock_total_qty += qty
-            stock_total_rub += qty * cogs_cache[sr.sku_id]
+            total_qty += qty
+            total_rub += qty * cogs_cache[sr.sku_id]
+        return total_rub, total_qty
+
+    # Остаток на самую последнюю дату (для "Итого" колонки)
+    stock_total_rub, stock_total_qty = _stock_on_date(date_to)
 
     balance_weekly: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
     for row in balance_rows:
@@ -198,7 +206,16 @@ def get_dds(
                     month_auto[k] += auto_weekly.get(wp, {}).get(k, 0)
                 for cat, amt in manual_weekly.get(wp, {}).items():
                     month_manual[cat] += amt
-            lines = _build_lines(month_auto, month_manual, defaultdict(float))
+            # Остаток на конец последней недели месяца
+            last_wp = month_weeks.get(prev_month, [])[-1] if month_weeks.get(prev_month) else None
+            month_stock_rub, month_stock_qty = 0.0, 0
+            if last_wp:
+                try:
+                    month_end = datetime.strptime(last_wp, "%Y-%m-%d").date() + timedelta(days=6)
+                    month_stock_rub, month_stock_qty = _stock_on_date(month_end)
+                except Exception:
+                    pass
+            lines = _build_lines(month_auto, month_manual, defaultdict(float), month_stock_rub, month_stock_qty)
             month_names = {"01": "Январь", "02": "Февраль", "03": "Март", "04": "Апрель",
                           "05": "Май", "06": "Июнь", "07": "Июль", "08": "Август",
                           "09": "Сентябрь", "10": "Октябрь", "11": "Ноябрь", "12": "Декабрь"}
@@ -208,7 +225,13 @@ def get_dds(
         auto = auto_weekly.get(period, dict(empty_auto))
         manual = manual_weekly.get(period, defaultdict(float))
         balances = balance_weekly.get(period, defaultdict(float))
-        lines = _build_lines(auto, manual, balances, stock_total_rub, stock_total_qty)
+        # Остаток на конец этой недели (неделя начинается в period, конец = period+6 дней)
+        try:
+            week_end = datetime.strptime(period, "%Y-%m-%d").date() + timedelta(days=6)
+        except Exception:
+            week_end = date_to
+        week_stock_rub, week_stock_qty = _stock_on_date(week_end)
+        lines = _build_lines(auto, manual, balances, week_stock_rub, week_stock_qty)
         periods_result.append({"period": period, "lines": lines})
         prev_month = cur_month
 
@@ -221,7 +244,13 @@ def get_dds(
                 month_auto[k] += auto_weekly.get(wp, {}).get(k, 0)
             for cat, amt in manual_weekly.get(wp, {}).items():
                 month_manual_last[cat] += amt
-        lines = _build_lines(month_auto, month_manual_last, defaultdict(float))
+        last_wp = month_weeks[prev_month][-1]
+        try:
+            month_end = datetime.strptime(last_wp, "%Y-%m-%d").date() + timedelta(days=6)
+            month_stock_rub, month_stock_qty = _stock_on_date(month_end)
+        except Exception:
+            month_stock_rub, month_stock_qty = stock_total_rub, stock_total_qty
+        lines = _build_lines(month_auto, month_manual_last, defaultdict(float), month_stock_rub, month_stock_qty)
         month_names = {"01": "Январь", "02": "Февраль", "03": "Март", "04": "Апрель",
                       "05": "Май", "06": "Июнь", "07": "Июль", "08": "Август",
                       "09": "Сентябрь", "10": "Октябрь", "11": "Ноябрь", "12": "Декабрь"}
