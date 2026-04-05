@@ -110,6 +110,8 @@ export default function CreditsPage() {
 
       {isLoading && <div className="text-gray-400 text-sm">Загрузка...</div>}
 
+      {credits.length > 0 && <PeriodSummary />}
+
       {!isLoading && credits.length === 0 && (
         <div className="bg-white border border-dashed border-gray-300 rounded-xl px-4 py-12 text-center text-gray-400 text-sm">
           Нет кредитов. Нажми «+ Новый кредит» чтобы добавить.
@@ -192,6 +194,109 @@ export default function CreditsPage() {
           payment={paymentModal.payment}
           onClose={() => setPaymentModal(null)}
         />
+      )}
+    </div>
+  )
+}
+
+interface PeriodRow {
+  period: string
+  sum_body: number
+  sum_interest: number
+  sum_total: number
+  credits: { credit_id: number; credit_name: string; body: number; interest: number; total: number; count: number }[]
+}
+
+function PeriodSummary() {
+  const [granularity, setGranularity] = useState<'month' | 'week'>('month')
+  const [showDetails, setShowDetails] = useState(false)
+  const { data: rows = [], isLoading } = useQuery<PeriodRow[]>({
+    queryKey: ['credits-summary', granularity],
+    queryFn: () => api.get('/credits/summary-by-period', { params: { period: granularity } }).then(r => r.data),
+  })
+
+  const fmtPeriod = (p: string) => {
+    const d = new Date(p + 'T00:00:00')
+    if (granularity === 'month') {
+      return d.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })
+    }
+    const end = new Date(d); end.setDate(end.getDate() + 6)
+    const f = (dt: Date) => `${dt.getDate().toString().padStart(2,'0')}.${(dt.getMonth()+1).toString().padStart(2,'0')}`
+    return `${f(d)}–${f(end)}`
+  }
+
+  const grandBody = rows.reduce((s, r) => s + r.sum_body, 0)
+  const grandInterest = rows.reduce((s, r) => s + r.sum_interest, 0)
+  const grandTotal = rows.reduce((s, r) => s + r.sum_total, 0)
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">
+        <div className="text-sm font-semibold text-gray-800">Сводная по периодам</div>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-1 text-xs text-gray-600">
+            <input type="checkbox" checked={showDetails} onChange={(e) => setShowDetails(e.target.checked)} />
+            Показать по кредитам
+          </label>
+          <select
+            value={granularity}
+            onChange={(e) => setGranularity(e.target.value as 'month' | 'week')}
+            className="border border-gray-200 rounded px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+          >
+            <option value="month">По месяцам</option>
+            <option value="week">По неделям</option>
+          </select>
+        </div>
+      </div>
+      {isLoading ? (
+        <div className="px-4 py-6 text-sm text-gray-400">Загрузка...</div>
+      ) : rows.length === 0 ? (
+        <div className="px-4 py-6 text-sm text-gray-400 text-center">Нет платежей</div>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-100 text-gray-500">
+              <th className="text-left px-4 py-2 font-medium text-xs">Период</th>
+              <th className="text-right px-3 py-2 font-medium text-xs">Тело</th>
+              <th className="text-right px-3 py-2 font-medium text-xs">Проценты</th>
+              <th className="text-right px-3 py-2 font-medium text-xs">Платёж итого</th>
+              <th className="text-right px-3 py-2 font-medium text-xs">Кол-во</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => (
+              <>
+                <tr key={r.period} className="border-b border-gray-50 bg-white hover:bg-gray-50/50">
+                  <td className="px-4 py-2 font-medium text-gray-800">{fmtPeriod(r.period)}</td>
+                  <td className="text-right px-3 py-2 tabular-nums">{fmt(r.sum_body)}</td>
+                  <td className="text-right px-3 py-2 tabular-nums text-gray-500">{fmt(r.sum_interest)}</td>
+                  <td className="text-right px-3 py-2 tabular-nums font-semibold">{fmt(r.sum_total)}</td>
+                  <td className="text-right px-3 py-2 tabular-nums text-gray-400 text-xs">
+                    {r.credits.reduce((s, c) => s + c.count, 0)}
+                  </td>
+                </tr>
+                {showDetails && r.credits.map(c => (
+                  <tr key={`${r.period}-${c.credit_id}`} className="border-b border-gray-50 bg-gray-50/30">
+                    <td className="pl-10 pr-4 py-1.5 text-xs text-gray-500 truncate max-w-[300px]" title={c.credit_name}>
+                      {c.credit_name}
+                    </td>
+                    <td className="text-right px-3 py-1.5 tabular-nums text-xs">{fmt(c.body)}</td>
+                    <td className="text-right px-3 py-1.5 tabular-nums text-xs text-gray-500">{fmt(c.interest)}</td>
+                    <td className="text-right px-3 py-1.5 tabular-nums text-xs">{fmt(c.total)}</td>
+                    <td className="text-right px-3 py-1.5 tabular-nums text-xs text-gray-400">{c.count}</td>
+                  </tr>
+                ))}
+              </>
+            ))}
+            <tr className="bg-indigo-50/50 border-t-2 border-t-indigo-100">
+              <td className="px-4 py-2 font-bold text-gray-900">ИТОГО</td>
+              <td className="text-right px-3 py-2 tabular-nums font-bold">{fmt(grandBody)}</td>
+              <td className="text-right px-3 py-2 tabular-nums font-bold text-gray-700">{fmt(grandInterest)}</td>
+              <td className="text-right px-3 py-2 tabular-nums font-bold">{fmt(grandTotal)}</td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
       )}
     </div>
   )

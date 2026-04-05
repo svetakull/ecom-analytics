@@ -244,6 +244,72 @@ def update_payment(
     return _serialize_payment(p)
 
 
+@router.get("/summary-by-period")
+def summary_by_period(
+    period: str = "month",  # month | week
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Сводная таблица платежей по кредитам сгруппированная по периодам.
+    period: 'month' или 'week'. Возвращает per-credit + total строки."""
+    trunc_fn = 'month' if period == 'month' else 'week'
+    q = db.query(
+        CreditPayment.credit_id,
+        func.date_trunc(trunc_fn, CreditPayment.payment_date).label('period'),
+        func.sum(CreditPayment.body_amount).label('body'),
+        func.sum(CreditPayment.interest_amount).label('interest'),
+        func.sum(CreditPayment.total_amount).label('total'),
+        func.count(CreditPayment.id).label('count'),
+    )
+    if date_from:
+        q = q.filter(CreditPayment.payment_date >= date_from)
+    if date_to:
+        q = q.filter(CreditPayment.payment_date <= date_to)
+    q = q.group_by(CreditPayment.credit_id, 'period').order_by('period', CreditPayment.credit_id)
+    rows = q.all()
+
+    # Соберём dict period → {credit_id: data}
+    credits = {c.id: c for c in db.query(Credit).all()}
+    periods: dict = {}
+    for r in rows:
+        p_str = (r.period.date() if hasattr(r.period, 'date') else r.period).strftime('%Y-%m-%d')
+        periods.setdefault(p_str, {})[r.credit_id] = {
+            'body': float(r.body or 0),
+            'interest': float(r.interest or 0),
+            'total': float(r.total or 0),
+            'count': int(r.count or 0),
+        }
+
+    # Итого по периоду (сумма всех кредитов)
+    result = []
+    for p_str in sorted(periods.keys()):
+        per_credit = []
+        sum_body = sum_interest = sum_total = 0
+        for cid, data in periods[p_str].items():
+            c = credits.get(cid)
+            per_credit.append({
+                'credit_id': cid,
+                'credit_name': c.name if c else f'#{cid}',
+                'body': data['body'],
+                'interest': data['interest'],
+                'total': data['total'],
+                'count': data['count'],
+            })
+            sum_body += data['body']
+            sum_interest += data['interest']
+            sum_total += data['total']
+        result.append({
+            'period': p_str,
+            'credits': per_credit,
+            'sum_body': sum_body,
+            'sum_interest': sum_interest,
+            'sum_total': sum_total,
+        })
+    return result
+
+
 @router.get("/wb-deductions")
 def wb_deductions(
     date_from: Optional[date] = None,
