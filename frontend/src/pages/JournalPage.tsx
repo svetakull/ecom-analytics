@@ -4,6 +4,7 @@ import { format, subDays, startOfDay, startOfYear } from 'date-fns'
 import DateRangePicker, { type DateRange } from '@/components/DateRangePicker'
 import JournalEntryModal from '@/components/JournalEntryModal'
 import StatementUploadModal from '@/components/StatementUploadModal'
+import ReceiptsUploadModal from '@/components/ReceiptsUploadModal'
 import { api } from '@/api/client'
 import { Plus, Paperclip, Camera, Pencil, Trash2, RefreshCw } from 'lucide-react'
 import clsx from 'clsx'
@@ -71,6 +72,7 @@ export default function JournalPage() {
   const [filterCategory, setFilterCategory] = useState<string>('')
   const [modalOpen, setModalOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
+  const [receiptsOpen, setReceiptsOpen] = useState(false)
   const [editEntry, setEditEntry] = useState<JournalEntry | null>(null)
   const queryClient = useQueryClient()
 
@@ -173,7 +175,7 @@ export default function JournalPage() {
             Загрузить выписку
           </button>
           <button
-            onClick={() => setUploadOpen(true)}
+            onClick={() => setReceiptsOpen(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 bg-white text-sm text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
           >
             <Camera size={15} />
@@ -368,6 +370,7 @@ export default function JournalPage() {
       {/* Modals */}
       <JournalEntryModal open={modalOpen} onClose={handleCloseModal} editEntry={editEntry} />
       <StatementUploadModal open={uploadOpen} onClose={() => setUploadOpen(false)} />
+      <ReceiptsUploadModal open={receiptsOpen} onClose={() => setReceiptsOpen(false)} />
     </div>
   )
 }
