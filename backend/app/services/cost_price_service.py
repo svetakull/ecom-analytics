@@ -101,14 +101,46 @@ def list_cost_prices(
     # ── Находим SKU×channel без default-записи ──
     if target_channel_ids:
         from app.models.inventory import SKUCostHistory, ProductBatch
+        from app.models.sales import Order, Sale
 
-        sc_q = db.query(SKUChannel).join(SKU, SKUChannel.sku_id == SKU.id).filter(
-            SKUChannel.is_active == True,
+        # Собираем все пары (sku_id, channel_id) из:
+        # 1) активных SKUChannel (канонический источник),
+        # 2) реальных заказов/продаж (на случай если SKUChannel пустой),
+        # 3) SKUCostHistory + все активные каналы (запасной путь).
+        pairs: set[tuple[int, int]] = set()
+
+        sc_q = db.query(SKUChannel.sku_id, SKUChannel.channel_id).join(
+            SKU, SKUChannel.sku_id == SKU.id
+        ).filter(
             SKU.is_active == True,
             SKUChannel.channel_id.in_(target_channel_ids),
         )
         if article:
             sc_q = sc_q.filter(SKU.seller_article.ilike(f"%{article}%"))
+        for row in sc_q.all():
+            pairs.add((row[0], row[1]))
+
+        order_q = db.query(Order.sku_id, Order.channel_id).join(
+            SKU, Order.sku_id == SKU.id
+        ).filter(
+            SKU.is_active == True,
+            Order.channel_id.in_(target_channel_ids),
+        ).distinct()
+        if article:
+            order_q = order_q.filter(SKU.seller_article.ilike(f"%{article}%"))
+        for row in order_q.all():
+            pairs.add((row[0], row[1]))
+
+        sale_q = db.query(Sale.sku_id, Sale.channel_id).join(
+            SKU, Sale.sku_id == SKU.id
+        ).filter(
+            SKU.is_active == True,
+            Sale.channel_id.in_(target_channel_ids),
+        ).distinct()
+        if article:
+            sale_q = sale_q.filter(SKU.seller_article.ilike(f"%{article}%"))
+        for row in sale_q.all():
+            pairs.add((row[0], row[1]))
 
         existing_defaults = {
             (cp.sku_id, cp.channel_id, cp.size)
@@ -141,12 +173,12 @@ def list_cost_prices(
             return 0.0
 
         created_any = False
-        for sc in sc_q.all():
-            if (sc.sku_id, sc.channel_id, None) not in existing_defaults:
-                migrated_cost = _migrate_cost_for(sc.sku_id)
+        for sku_id, ch_id in pairs:
+            if (sku_id, ch_id, None) not in existing_defaults:
+                migrated_cost = _migrate_cost_for(sku_id)
                 db.add(CostPrice(
-                    sku_id=sc.sku_id,
-                    channel_id=sc.channel_id,
+                    sku_id=sku_id,
+                    channel_id=ch_id,
                     size=None,
                     is_default=True,
                     effective_from=None,
