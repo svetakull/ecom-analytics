@@ -108,7 +108,9 @@ class SkuDailyExpense(Base):
     ppvz_for_pay: Mapped[float] = mapped_column(Numeric(12, 2), default=0)      # К перечислению продавцу (ДДС)
     credit_deduction: Mapped[float] = mapped_column(Numeric(12, 2), default=0) # Удержание кредита (тело, не %)
     return_count: Mapped[int] = mapped_column(Integer, default=0)                # кол-во возвратов
-    acquiring: Mapped[float] = mapped_column(Numeric(12, 2), default=0)          # эквайринг
+    acquiring: Mapped[float] = mapped_column(Numeric(12, 2), default=0)          # эквайринг (нетто: sales - returns)
+    sale_commission_gross: Mapped[float] = mapped_column(Numeric(12, 2), default=0)  # комиссия ТОЛЬКО от продаж (без возвратов)
+    acquiring_gross: Mapped[float] = mapped_column(Numeric(12, 2), default=0)    # эквайринг ТОЛЬКО от продаж (без возвратов)
     compensation: Mapped[float] = mapped_column(Numeric(12, 2), default=0)       # реализация = accruals_for_sale (что зачислено продавцу)
     return_amount: Mapped[float] = mapped_column(Numeric(12, 2), default=0)      # возвраты (amount)
     items_count: Mapped[int] = mapped_column(Integer, default=0)                 # кол-во единиц в транзакциях

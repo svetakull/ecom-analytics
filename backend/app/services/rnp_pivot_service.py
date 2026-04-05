@@ -586,21 +586,28 @@ def get_rnp_pivot(
                 ozon_expense_map[exp.date] = {
                     "sale_amount": float(exp.sale_amount),
                     "commission": float(exp.commission),
+                    "commission_gross": float(exp.sale_commission_gross or 0),
+                    "acquiring_gross": float(exp.acquiring_gross or 0),
                     "logistics": float(exp.logistics),
                     "storage": float(exp.storage),
                     "items": int(exp.items_count),
                 }
             # Усреднение за окно: Ozon начисляет комиссию асинхронно, дневные
             # значения скачут, среднее за ≥14 дней — стабильная точка контроля.
+            # ВАЖНО: для прогноза комиссии используем ТОЛЬКО брутто от продаж
+            # (без возвратов), чтобы ставка совпадала с договором.
             _total_sale = sum(v["sale_amount"] for v in ozon_expense_map.values())
             _total_comm = sum(v["commission"] for v in ozon_expense_map.values())
+            _total_comm_gross = sum(v["commission_gross"] for v in ozon_expense_map.values())
+            _total_acq_gross = sum(v["acquiring_gross"] for v in ozon_expense_map.values())
             _total_log = sum(v["logistics"] for v in ozon_expense_map.values())
             _total_items = sum(v["items"] for v in ozon_expense_map.values())
             if _total_items > 0:
-                ozon_avg_commission_per_unit = _total_comm / _total_items
+                ozon_avg_commission_per_unit = _total_comm_gross / _total_items
                 ozon_avg_logistics_per_unit = _total_log / _total_items
             if _total_sale > 0:
-                ozon_avg_commission_pct = _total_comm / _total_sale * 100
+                # % = (брутто комиссия + эквайринг) / продажи × 100
+                ozon_avg_commission_pct = (_total_comm_gross + _total_acq_gross) / _total_sale * 100
 
         # Предвычисляем рекламные метрики по дням (по типам кампаний)
         ad_metrics_map = _build_ad_metrics_map(db, sku.id, channel.id, min(day_list), ref_date)
@@ -750,15 +757,22 @@ def get_rnp_pivot(
 
             # Комиссия и логистика на единицу
             if channel.type == ChannelType.OZON:
-                # Ozon: эффективная ставка = sum(commission) / sum(sale_amount) за 14 дней × 100.
-                # Дневные значения шумные из-за возвратов (комиссия возвращается продавцу),
-                # поэтому используем скользящее среднее по всему окну для стабильности.
+                # Ozon: % = (брутто комиссия + эквайринг) / sale_amount × 100.
+                # Используем ТОЛЬКО продажи (без возвратов) — это и есть ставка договора Ozon.
                 if commission_pct_override_val is not None:
                     commission_pct = commission_pct_override_val
-                elif _total_sale > 0:
-                    commission_pct = _total_comm / _total_sale * 100
                 else:
-                    commission_pct = float(channel.commission_pct)
+                    _oz_day = ozon_expense_map.get(d, {})
+                    _day_sale = _oz_day.get("sale_amount", 0.0)
+                    _day_comm_gross = _oz_day.get("commission_gross", 0.0)
+                    _day_acq_gross = _oz_day.get("acquiring_gross", 0.0)
+                    if _day_sale > 0:
+                        commission_pct = (_day_comm_gross + _day_acq_gross) / _day_sale * 100
+                    elif ozon_avg_commission_pct > 0:
+                        # Нет данных за день → средняя за окно
+                        commission_pct = ozon_avg_commission_pct
+                    else:
+                        commission_pct = float(channel.commission_pct)
                 commission_per_unit = round(p_before * commission_pct / 100, 2)
                 logistics_per_unit = ozon_avg_logistics_per_unit
             else:

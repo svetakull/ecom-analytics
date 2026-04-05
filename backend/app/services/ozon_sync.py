@@ -500,6 +500,7 @@ def sync_expenses(db: Session, client: OzonClient, days_back: int = 90) -> dict:
         "sale_amount": 0.0, "commission": 0.0, "logistics": 0.0, "storage": 0.0,
         "penalty": 0.0, "acceptance": 0.0, "other_deductions": 0.0, "acquiring": 0.0,
         "compensation": 0.0, "return_amount": 0.0, "items_count": 0,
+        "sale_commission_gross": 0.0, "acquiring_gross": 0.0,
     }
 
     agg: dict[tuple[str, date], dict] = defaultdict(_ZERO)
@@ -535,6 +536,7 @@ def sync_expenses(db: Session, client: OzonClient, days_back: int = 90) -> dict:
                 # ── Продажа: комиссия + логистика из services + выплата ────
                 commission = abs(float(op.get("sale_commission") or 0))
                 entry["commission"] += commission * share
+                entry["sale_commission_gross"] += commission * share  # брутто, без вычета возвратов
 
                 accruals = float(op.get("accruals_for_sale") or 0)
                 entry["sale_amount"] += accruals * share
@@ -556,6 +558,9 @@ def sync_expenses(db: Session, client: OzonClient, days_back: int = 90) -> dict:
                         entry["penalty"] += amt * share
                     elif sname in ACCEPTANCE_SERVICES:
                         entry["acceptance"] += amt * share
+                    elif sname in ACQUIRING_SERVICES or "acquiring" in sname.lower():
+                        entry["acquiring"] += amt * share
+                        entry["acquiring_gross"] += amt * share  # брутто, от продаж
                     else:
                         entry["other_deductions"] += amt * share
 
@@ -641,6 +646,8 @@ def sync_expenses(db: Session, client: OzonClient, days_back: int = 90) -> dict:
             existing.compensation = vals["compensation"]
             existing.return_amount = vals["return_amount"]
             existing.items_count = vals["items_count"]
+            existing.sale_commission_gross = vals["sale_commission_gross"]
+            existing.acquiring_gross = vals["acquiring_gross"]
         else:
             db.add(SkuDailyExpense(
                 sku_id=sku_id,
