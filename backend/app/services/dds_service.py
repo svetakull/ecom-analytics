@@ -164,6 +164,14 @@ def get_dds(
         period = row.week.strftime("%Y-%m-%d") if row.week else "unknown"
         balance_weekly[period][row.account_name] = float(row.amount or 0)
 
+    # Также: балансы, введённые через inline-редактирование в DDS
+    # (категории вида 'balance_acc:{account_name}')
+    for period, cats in manual_weekly.items():
+        for cat, amt in list(cats.items()):
+            if cat and cat.startswith("balance_acc:"):
+                acc_name = cat.split(":", 1)[1]
+                balance_weekly[period][acc_name] = float(amt or 0)
+
     # --- Список всех счетов: из журнала операций + из балансов ---
     from app.models.finance import JournalEntry
     account_names_rows = db.query(JournalEntry.account_name).filter(
@@ -296,6 +304,8 @@ def get_dds(
         key = line.get("key", "")
         if key.startswith("itogo_") or key.startswith("section_"):
             return True
+        if key.startswith("balance_acc_") or key in ("balance_computed", "balance_diff"):
+            return True  # строки раздела VII — всегда показываем для ручного ввода
         if key in ("ostatok_nachalo", "ostatok_konec", "chisty_potok"):
             return True
         return False
