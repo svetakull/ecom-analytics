@@ -39,6 +39,17 @@ export default function DDSPage() {
   const [selectedChannels, setSelectedChannels] = useState<string[]>([])
   const [editingCell, setEditingCell] = useState<{ key: string; period: string; category: string } | null>(null)
   const [editValue, setEditValue] = useState('')
+  // Сворачиваемые группы (по умолчанию свёрнуты)
+  const EXPANDABLE_KEYS = ['postuplenie_na_schet', 'fot', 'outsource', 'warehouse']
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+  const toggleGroup = (key: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
   const queryClient = useQueryClient()
 
   const dateFrom = format(dateRange.from, 'yyyy-MM-dd')
@@ -127,9 +138,28 @@ export default function DDSPage() {
               visibleColumns={visibleColumns}
             />
             <tbody>
-              {lineNames.map((line: DDSLine, i: number) => {
+              {(() => {
+                // Вычисляем, какие level=2 строки скрывать (их родитель свёрнут)
+                // Для каждой level=2 строки находим ближайший предыдущий level=1 и проверяем статус
+                const hideLevel2 = new Set<string>()
+                let currentParent: string | null = null
+                for (const ln of lineNames) {
+                  if (ln.level === 0) {
+                    currentParent = null
+                  } else if (ln.level === 1) {
+                    currentParent = EXPANDABLE_KEYS.includes(ln.key) ? ln.key : null
+                  } else if (ln.level === 2 && currentParent) {
+                    if (!expandedGroups.has(currentParent)) {
+                      hideLevel2.add(ln.key)
+                    }
+                  }
+                }
+                return lineNames.filter((l: DDSLine) => !hideLevel2.has(l.key))
+              })().map((line: DDSLine, i: number) => {
                 const isTotal = line.bold && (line.key.startsWith('itogo') || line.key === 'chisty_potok' || line.key === 'ostatok_konec')
                 const isBalanceSection = line.key === 'section_balances'
+                const isExpandable = EXPANDABLE_KEYS.includes(line.key)
+                const isExpanded = expandedGroups.has(line.key)
 
                 const handleAddAccount = async () => {
                   const name = window.prompt('Название счёта:')
@@ -164,6 +194,16 @@ export default function DDSPage() {
                       )}
                       style={{ paddingLeft: `${16 + line.level * 20}px` }}
                     >
+                      {isExpandable && (
+                        <button
+                          onClick={() => toggleGroup(line.key)}
+                          className="mr-1.5 inline-flex items-center justify-center w-4 h-4 text-gray-400 hover:text-gray-700 transition-transform"
+                          style={{ transform: isExpanded ? 'rotate(90deg)' : 'none' }}
+                          title={isExpanded ? 'Свернуть' : 'Развернуть'}
+                        >
+                          ▶
+                        </button>
+                      )}
                       {line.name}
                       {isBalanceSection && (
                         <button
