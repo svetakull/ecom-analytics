@@ -239,6 +239,133 @@ def update_payment(
     return _serialize_payment(p)
 
 
+@router.get("/wb-deductions")
+def wb_deductions(
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Список удержаний WB (credit_deduction) агрегированных по дням.
+    Используется как источник для автоматического добавления платежей по WB-кредитам."""
+    from app.models.sales import SkuDailyExpense
+    from app.models.catalog import Channel, ChannelType
+    q = (
+        db.query(
+            SkuDailyExpense.date,
+            func.sum(SkuDailyExpense.credit_deduction).label("amount"),
+        )
+        .join(Channel, Channel.id == SkuDailyExpense.channel_id)
+        .filter(Channel.type == ChannelType.WB)
+        .filter(SkuDailyExpense.credit_deduction > 0)
+    )
+    if date_from:
+        q = q.filter(SkuDailyExpense.date >= date_from)
+    if date_to:
+        q = q.filter(SkuDailyExpense.date <= date_to)
+    rows = q.group_by(SkuDailyExpense.date).order_by(SkuDailyExpense.date).all()
+    return [
+        {"date": r.date.isoformat(), "amount": float(r.amount or 0)}
+        for r in rows if float(r.amount or 0) > 0
+    ]
+
+
+class AutoImportPayload(BaseModel):
+    source: str = "wb"  # wb | ozon
+    date_from: Optional[date] = None
+    date_to: Optional[date] = None
+
+
+@router.post("/{credit_id}/auto-import")
+def auto_import_payments(
+    credit_id: int,
+    payload: AutoImportPayload,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Автоматически импортировать платежи из МП для указанного кредита.
+    WB: из SkuDailyExpense.credit_deduction (агрегировано по дням).
+    Разбивка тело/проценты: если есть фактические платежи с теми же датами
+    или такой же суммой — используем их. Иначе пропорционально остатку.
+    """
+    c = db.query(Credit).filter(Credit.id == credit_id).first()
+    if not c:
+        raise HTTPException(404, "Credit not found")
+
+    # Пропустим платежи, которые уже созданы на эту дату
+    existing_dates = {
+        p.payment_date for p in
+        db.query(CreditPayment).filter(CreditPayment.credit_id == credit_id).all()
+    }
+
+    created = 0
+    if payload.source == "wb":
+        from app.models.sales import SkuDailyExpense
+        from app.models.catalog import Channel, ChannelType
+        q = (
+            db.query(
+                SkuDailyExpense.date,
+                func.sum(SkuDailyExpense.credit_deduction).label("amount"),
+            )
+            .join(Channel, Channel.id == SkuDailyExpense.channel_id)
+            .filter(Channel.type == ChannelType.WB)
+            .filter(SkuDailyExpense.credit_deduction > 0)
+        )
+        df = payload.date_from or c.start_date
+        dt = payload.date_to
+        if df:
+            q = q.filter(SkuDailyExpense.date >= df)
+        if dt:
+            q = q.filter(SkuDailyExpense.date <= dt)
+        rows = q.group_by(SkuDailyExpense.date).order_by(SkuDailyExpense.date).all()
+
+        # Оцениваем дневную ставку процентов = interest_rate% / 30 дней
+        monthly_rate = float(c.interest_rate or 0) / 100  # % в месяц
+        prev_payment = (
+            db.query(CreditPayment)
+            .filter(CreditPayment.credit_id == credit_id)
+            .order_by(CreditPayment.payment_date.desc())
+            .first()
+        )
+        running_body_paid = sum(
+            float(p.body_amount or 0) for p in
+            db.query(CreditPayment).filter(CreditPayment.credit_id == credit_id).all()
+        )
+
+        for r in rows:
+            if r.date in existing_dates:
+                continue
+            total = float(r.amount or 0)
+            if total <= 0:
+                continue
+            remaining = max(float(c.principal or 0) - running_body_paid, 0)
+            # Приблизительно: проценты = остаток × ставка × (дни от пред.платежа / 30)
+            if prev_payment and monthly_rate > 0:
+                days = (r.date - prev_payment.payment_date).days
+                est_interest = round(remaining * monthly_rate * days / 30, 2)
+            else:
+                est_interest = round(remaining * monthly_rate, 2)
+            est_interest = min(est_interest, total)
+            est_body = round(total - est_interest, 2)
+            running_body_paid += est_body
+
+            p = CreditPayment(
+                credit_id=credit_id,
+                payment_date=r.date,
+                body_amount=est_body,
+                interest_amount=est_interest,
+                total_amount=total,
+                note="Авто-импорт из WB (credit_deduction)",
+                created_by=user.id,
+            )
+            db.add(p)
+            created += 1
+            prev_payment = p
+
+    db.commit()
+    return {"ok": True, "created": created}
+
+
 @router.delete("/payments/{payment_id}")
 def delete_payment(
     payment_id: int,

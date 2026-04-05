@@ -225,9 +225,12 @@ function PaymentsTable({ creditId, principal, onAddPayment, onEditPayment }:
     <div className="border-t border-gray-100">
       <div className="flex items-center justify-between px-4 py-2 bg-gray-50">
         <div className="text-xs text-gray-500">Платежи</div>
-        <button onClick={onAddPayment} className="text-xs text-blue-600 hover:text-blue-700 font-medium">
-          + Добавить платёж
-        </button>
+        <div className="flex items-center gap-3">
+          <AutoImportButton creditId={creditId} />
+          <button onClick={onAddPayment} className="text-xs text-blue-600 hover:text-blue-700 font-medium">
+            + Добавить платёж
+          </button>
+        </div>
       </div>
       {isLoading ? (
         <div className="text-xs text-gray-400 px-4 py-3">Загрузка...</div>
@@ -401,6 +404,29 @@ function PaymentModal({ creditId, payment, onClose }: { creditId: number; paymen
       </div>
       <style>{`.field { width: 100%; border: 1px solid #e5e7eb; border-radius: 8px; padding: 6px 10px; font-size: 14px; outline: none; }`}</style>
     </div>
+  )
+}
+
+function AutoImportButton({ creditId }: { creditId: number }) {
+  const qc = useQueryClient()
+  const importMut = useMutation({
+    mutationFn: () => api.post(`/credits/${creditId}/auto-import`, { source: 'wb' }),
+    onSuccess: (r: any) => {
+      qc.invalidateQueries({ queryKey: ['credit-payments', creditId] })
+      qc.invalidateQueries({ queryKey: ['credits'] })
+      window.alert(`Импортировано платежей: ${r?.data?.created ?? 0}`)
+    },
+    onError: () => window.alert('Ошибка импорта'),
+  })
+  return (
+    <button
+      onClick={() => importMut.mutate()}
+      disabled={importMut.isPending}
+      className="text-xs text-emerald-600 hover:text-emerald-700 font-medium disabled:opacity-40"
+      title="Импортировать платежи из удержаний WB"
+    >
+      {importMut.isPending ? '...' : '↓ Импорт из WB'}
+    </button>
   )
 }
 
