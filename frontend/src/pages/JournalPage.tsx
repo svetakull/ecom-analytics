@@ -6,7 +6,7 @@ import JournalEntryModal from '@/components/JournalEntryModal'
 import StatementUploadModal from '@/components/StatementUploadModal'
 import ReceiptsUploadModal from '@/components/ReceiptsUploadModal'
 import { api } from '@/api/client'
-import { Plus, Paperclip, Camera, Pencil, Trash2, RefreshCw } from 'lucide-react'
+import { Plus, Paperclip, Camera, Pencil, Copy, Trash2, RefreshCw } from 'lucide-react'
 import clsx from 'clsx'
 
 const fmt = (n: number) =>
@@ -297,6 +297,9 @@ export default function JournalPage() {
             <button onClick={() => handleEdit(entry)} className="p-1 text-gray-400 hover:text-blue-600 rounded" title="Редактировать">
               <Pencil size={14} />
             </button>
+            <button onClick={() => handleCopy(entry)} className="p-1 text-gray-400 hover:text-emerald-600 rounded" title="Копировать">
+              <Copy size={14} />
+            </button>
             <button onClick={() => handleDelete(entry.id)} className="p-1 text-gray-400 hover:text-red-600 rounded" title="Удалить">
               <Trash2 size={14} />
             </button>
@@ -311,6 +314,12 @@ export default function JournalPage() {
     if (window.confirm('Удалить операцию?')) {
       deleteMutation.mutate(id)
     }
+  }
+
+  const handleCopy = (entry: JournalEntry) => {
+    // Копия без id — модалка откроется с предзаполненными данными и сохранит как новую
+    setEditEntry({ ...entry, id: 0 } as JournalEntry)
+    setModalOpen(true)
   }
 
   const handleCloseModal = () => {

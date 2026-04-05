@@ -150,10 +150,11 @@ export default function JournalEntryModal({ open, onClose, editEntry }: Props) {
     return () => clearTimeout(timeout)
   }, [form.counterparty])
 
+  const isEditing = !!(editEntry && editEntry.id)
   const createMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
-      editEntry
-        ? api.put(`/journal/${editEntry.id}`, data)
+      isEditing
+        ? api.put(`/journal/${editEntry!.id}`, data)
         : api.post('/journal', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['journal'] })
@@ -195,7 +196,7 @@ export default function JournalEntryModal({ open, onClose, editEntry }: Props) {
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-5 pb-3">
           <h2 className="text-lg font-bold text-gray-900">
-            {editEntry ? 'Редактировать операцию' : 'Новая операция'}
+            {isEditing ? 'Редактировать операцию' : (editEntry ? 'Копия операции' : 'Новая операция')}
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X size={20} />

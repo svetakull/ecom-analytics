@@ -32,6 +32,7 @@ DDS_CATEGORIES = sorted([
     {"key": "external_ads_smm_brand", "name": "СММ продвижение бренда", "section": "expenses"},
     {"key": "external_ads_shootings_brand", "name": "Съёмки для бренда", "section": "expenses"},
     {"key": "external_ads_site", "name": "Реклама сайта (Яндекс Директ)", "section": "expenses"},
+    {"key": "site_delivery", "name": "Доставка покупателю (сайт)", "section": "expenses"},
     {"key": "buyout_services", "name": "Выкупы-услуги", "section": "expenses"},
     {"key": "buyout_goods", "name": "Выкупы товар", "section": "expenses"},
     {"key": "salary", "name": "ФОТ (общий)", "section": "expenses"},

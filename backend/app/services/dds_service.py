@@ -385,7 +385,7 @@ def _net_flow(auto: dict, manual: dict[str, float]) -> float:
         "outsource", "outsource_accountant", "outsource_it", "outsource_other",
         "warehouse", "warehouse_kalmykia", "courier", "travel", "bank_fees",
         "office", "equipment", "education", "subscriptions", "new_products", "pvz",
-        "delivery_rf", "rent_pvz", "other",
+        "delivery_rf", "rent_pvz", "other", "site_delivery",
     ]
     rashody = sum(_manual(manual, k) for k in exp_keys)
 
@@ -494,7 +494,8 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
     other_expense = _manual(manual, "other")
 
     # Группа «Сайт»
-    site_total = external_ads_site
+    site_delivery = _manual(manual, "site_delivery")
+    site_total = external_ads_site + site_delivery
     # Группа «ПВЗ» = Расходы ПВЗ + Аренда ПВЗ + ФОТ ПВЗ
     # (salary_pvz уже входит в fot, поэтому вычтем и перенесём сюда)
     fot = fot - salary_pvz  # вынимаем ФОТ ПВЗ из общего ФОТ
@@ -579,6 +580,7 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
         # Направление: Сайт
         {"key": "site_group", "name": "Сайт", "amount": round(site_total, 2), "level": 1, "bold": False, "editable": False, "section": "expenses", "category": None},
         {"key": "external_ads_site", "name": "Реклама сайта (Яндекс Директ)", "amount": round(external_ads_site, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "external_ads_site"},
+        {"key": "site_delivery", "name": "Доставка покупателю", "amount": round(site_delivery, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "site_delivery"},
         # Направление: Продвижение внешнее
         {"key": "external_ads", "name": "Продвижение внешнее", "amount": round(external_ads_total, 2), "level": 1, "bold": False, "editable": False, "section": "expenses", "category": None},
         {"key": "external_ads_base", "name": "Общее", "amount": round(external_ads_base, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "external_ads"},
