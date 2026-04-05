@@ -1095,7 +1095,10 @@ function buildChannelAggregate(skus: RnPPivotSKU[], channelType: string, days: s
     avg_price_after_spp: w('avg_price_after_spp'),
     avg_spp_pct: w('avg_spp_pct'),
     current_stock: totalStock,
-    turnover_days: 0,
+    turnover_days: (() => {
+      const avgDaily = days.length > 0 ? totalOrdersQty / days.length : 0
+      return avgDaily > 0 ? Math.round((totalStock / avgDaily) * 10) / 10 : 999
+    })(),
     buyout_rate_pct: w('buyout_rate_pct'),
     buyout_rate_is_manual: false,
     logistics_per_unit_avg: w('logistics_per_unit_avg'),
@@ -1148,7 +1151,6 @@ function ChannelAggregateCard({ agg, days, externalCollapsed }: {
             <span className="font-bold text-sm px-2 py-0.5 rounded bg-indigo-100 text-indigo-800">
               ИТОГО · {meta.label}
             </span>
-            <span className="text-xs text-gray-500">сводная по всем артикулам канала</span>
           </div>
         </div>
         <div className="hidden lg:flex items-center gap-5 text-sm">
@@ -1176,10 +1178,23 @@ function ChannelAggregateCard({ agg, days, externalCollapsed }: {
           <div className="text-right">
             <div className="text-[10px] text-gray-400 uppercase tracking-wide">Остаток</div>
             <div className="font-bold text-gray-800">{fmtNum(agg.current_stock)} шт</div>
+            <div className="text-[10px] text-gray-400">
+              {agg.turnover_days === 999 ? '∞' : agg.turnover_days.toFixed(0)} дн.
+            </div>
           </div>
           <div className="text-right">
-            <div className="text-[10px] text-gray-400 uppercase tracking-wide">Ср. выкуп</div>
-            <div className="font-bold text-gray-800">{agg.buyout_rate_pct.toFixed(1)}%</div>
+            <div className="text-[10px] text-gray-400 uppercase tracking-wide">Выкуп</div>
+            <div className={`font-bold ${agg.buyout_rate_pct >= 45 ? 'text-green-600' : agg.buyout_rate_pct >= 30 ? 'text-yellow-600' : 'text-red-500'}`}>
+              {agg.buyout_rate_pct.toFixed(1)}%
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-[10px] text-gray-400 uppercase tracking-wide">Логистика</div>
+            <div className="font-bold text-gray-800">{fmtNum(agg.logistics_per_unit_avg, 1)} ₽</div>
+          </div>
+          <div className="text-right">
+            <div className="text-[10px] text-gray-400 uppercase tracking-wide">Комиссия</div>
+            <div className="font-bold text-gray-800">{agg.commission_pct_avg.toFixed(2)}%</div>
           </div>
         </div>
         <button

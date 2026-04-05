@@ -745,10 +745,12 @@ def get_rnp_pivot(
 
             # Комиссия и логистика на единицу
             if channel.type == ChannelType.OZON:
-                # Ozon: комиссия + эквайринг из фактического финансового отчёта
-                # (/v1/finance/cash-flow-statement/list). total_pct ≈ 40% (комиссия ~39% + экв. ~1%).
-                ozon_ratios = get_ozon_fin_ratios(db)
-                commission_pct = ozon_ratios["total_pct"]
+                # Ozon: приоритет override → базовый процент канала → cash-flow API
+                if commission_pct_override_val is not None:
+                    commission_pct = commission_pct_override_val
+                else:
+                    # Базовый % канала (брутто по договору Ozon) — основной источник
+                    commission_pct = float(channel.commission_pct)
                 commission_per_unit = round(p_before * commission_pct / 100, 2)
                 logistics_per_unit = ozon_avg_logistics_per_unit
             else:
@@ -784,9 +786,15 @@ def get_rnp_pivot(
             forecast_sales_qty = int(o_qty * buyout_day + 0.5) if o_qty else 0
             forecast_sales_rub = round(forecast_sales_qty * p_before, 2)
 
-            # Хранение: реальные данные из отчёта платного хранения на эту дату
-            storage_on_day = _storage_cost_per_unit_on_day(db, sku.id, d)
-            storage_per_unit = storage_on_day if storage_on_day > 0 else (avg_storage_real if avg_storage_real > 0 else 0.0)
+            # Хранение: источник зависит от канала
+            if channel.type == ChannelType.OZON:
+                # Ozon: из SkuDailyExpense.storage (операции Ozon)
+                _oz = ozon_expense_map.get(d, {})
+                storage_per_unit = _oz.get("storage", 0.0)
+            else:
+                # WB/Lamoda: из отчёта платного хранения WB
+                storage_on_day = _storage_cost_per_unit_on_day(db, sku.id, d)
+                storage_per_unit = storage_on_day if storage_on_day > 0 else (avg_storage_real if avg_storage_real > 0 else 0.0)
 
             # Рекламные метрики за день
             _zero = {"budget": 0, "impressions": 0, "clicks": 0, "orders": 0}
