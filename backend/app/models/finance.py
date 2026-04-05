@@ -130,3 +130,38 @@ class TaxRate(Base):
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class Credit(Base):
+    """Кредит (заём, кредитная линия и т.п.)."""
+    __tablename__ = "credits"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(200), nullable=False)  # Название кредита (Сбербизнес, ВТБ)
+    bank = Column(String(100), nullable=True)   # Банк
+    principal = Column(Numeric(14, 2), nullable=False, default=0)  # Тело кредита (сумма выдачи)
+    interest_rate = Column(Numeric(6, 2), nullable=True)  # % годовых
+    start_date = Column(Date, nullable=True)
+    end_date = Column(Date, nullable=True)
+    monthly_payment = Column(Numeric(14, 2), nullable=True)  # ежемесячный платёж (если фиксированный)
+    note = Column(Text, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class CreditPayment(Base):
+    """Платёж по кредиту."""
+    __tablename__ = "credit_payments"
+
+    id = Column(Integer, primary_key=True)
+    credit_id = Column(Integer, ForeignKey("credits.id", ondelete="CASCADE"), nullable=False)
+    payment_date = Column(Date, nullable=False)
+    body_amount = Column(Numeric(14, 2), nullable=False, default=0)      # тело
+    interest_amount = Column(Numeric(14, 2), nullable=False, default=0)  # проценты
+    total_amount = Column(Numeric(14, 2), nullable=False, default=0)     # платёж
+    balance_after = Column(Numeric(14, 2), nullable=True)                # остаток после платежа
+    note = Column(Text, nullable=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())

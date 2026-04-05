@@ -113,6 +113,12 @@ const NAV_GROUPS: NavGroup[] = [
         icon: <Scale size={16} />,
         roles: ['owner', 'finance_manager'],
       },
+      {
+        path: '/credits',
+        label: 'Кредиты',
+        icon: <DollarSign size={16} />,
+        roles: ['owner', 'finance_manager'],
+      },
     ],
   },
   {
