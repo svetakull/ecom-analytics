@@ -246,13 +246,14 @@ def wb_deductions(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    """Список удержаний WB (credit_deduction) агрегированных по дням.
-    Используется как источник для автоматического добавления платежей по WB-кредитам."""
+    """Список удержаний WB (credit_deduction) агрегированных по НЕДЕЛЯМ
+    (еженедельный финотчёт). WB удерживает кредит одним платежом за неделю."""
     from app.models.sales import SkuDailyExpense
     from app.models.catalog import Channel, ChannelType
+    from datetime import timedelta as _td
     q = (
         db.query(
-            SkuDailyExpense.date,
+            func.date_trunc('week', SkuDailyExpense.date).label('week_start'),
             func.sum(SkuDailyExpense.credit_deduction).label("amount"),
         )
         .join(Channel, Channel.id == SkuDailyExpense.channel_id)
@@ -263,11 +264,20 @@ def wb_deductions(
         q = q.filter(SkuDailyExpense.date >= date_from)
     if date_to:
         q = q.filter(SkuDailyExpense.date <= date_to)
-    rows = q.group_by(SkuDailyExpense.date).order_by(SkuDailyExpense.date).all()
-    return [
-        {"date": r.date.isoformat(), "amount": float(r.amount or 0)}
-        for r in rows if float(r.amount or 0) > 0
-    ]
+    rows = q.group_by('week_start').order_by('week_start').all()
+    result = []
+    for r in rows:
+        amt = float(r.amount or 0)
+        if amt <= 0:
+            continue
+        ws = r.week_start.date() if hasattr(r.week_start, 'date') else r.week_start
+        week_end = ws + _td(days=6)
+        result.append({
+            "date": week_end.isoformat(),
+            "week_start": ws.isoformat(),
+            "amount": amt,
+        })
+    return result
 
 
 class AutoImportPayload(BaseModel):
@@ -302,9 +312,12 @@ def auto_import_payments(
     if payload.source == "wb":
         from app.models.sales import SkuDailyExpense
         from app.models.catalog import Channel, ChannelType
+        # Агрегируем удержания WB по НЕДЕЛЯМ (из еженедельного финотчёта
+        # они записываются на разные даты операций — группируем в недельные
+        # платежи, т.к. WB удерживает кредит одним платежом за неделю)
         q = (
             db.query(
-                SkuDailyExpense.date,
+                func.date_trunc('week', SkuDailyExpense.date).label('week_start'),
                 func.sum(SkuDailyExpense.credit_deduction).label("amount"),
             )
             .join(Channel, Channel.id == SkuDailyExpense.channel_id)
@@ -317,7 +330,16 @@ def auto_import_payments(
             q = q.filter(SkuDailyExpense.date >= df)
         if dt:
             q = q.filter(SkuDailyExpense.date <= dt)
-        rows = q.group_by(SkuDailyExpense.date).order_by(SkuDailyExpense.date).all()
+        raw_rows = q.group_by('week_start').order_by('week_start').all()
+        # Приводим к payment_date = воскресенье недели (конец недели)
+        from datetime import timedelta as _td
+        rows = [
+            type('Row', (), {
+                'date': (r.week_start.date() if hasattr(r.week_start, 'date') else r.week_start) + _td(days=6),
+                'amount': r.amount,
+            })()
+            for r in raw_rows
+        ]
 
         # Оцениваем дневную ставку процентов = interest_rate% / 30 дней
         monthly_rate = float(c.interest_rate or 0) / 100  # % в месяц
