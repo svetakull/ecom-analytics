@@ -39,6 +39,7 @@ DDS_CATEGORIES = sorted([
     {"key": "outsource_it", "name": "ИТ-программист", "section": "expenses"},
     {"key": "outsource_other", "name": "Другое (аутсорс)", "section": "expenses"},
     {"key": "warehouse", "name": "Склад", "section": "expenses"},
+    {"key": "warehouse_kalmykia", "name": "Склад Калмыкия", "section": "expenses"},
     {"key": "rent_pvz", "name": "Аренда ПВЗ", "section": "expenses"},
     {"key": "pvz", "name": "Расходы ПВЗ", "section": "expenses"},
     {"key": "courier", "name": "Курьерская доставка", "section": "expenses"},

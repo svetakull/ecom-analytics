@@ -31,28 +31,41 @@ interface Props {
 const fmt = (n: number) =>
   n.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-const BANK_OPTIONS = [
-  'Сбербанк',
+const DEFAULT_BANKS = [
   'Сбербизнес',
-  'Тинькофф',
-  'Точка',
-  'Альфа-Банк',
-  'ВТБ',
-  'Райффайзен',
-  'Модульбанк',
-  'Открытие',
-  'Газпромбанк',
-  'Росбанк',
-  'Промсвязьбанк',
-  'Юникредит',
-  'Другой банк',
+  'ВТБ Бизнес',
+  'Сбербанк',
+  'Т-банк',
+  'Озон Банк',
 ]
+
+const BANKS_STORAGE_KEY = 'ecom-analytics:banks'
+
+function loadBanks(): string[] {
+  try {
+    const stored = localStorage.getItem(BANKS_STORAGE_KEY)
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed
+    }
+  } catch {}
+  return [...DEFAULT_BANKS]
+}
+
+function saveBanks(banks: string[]): void {
+  try {
+    localStorage.setItem(BANKS_STORAGE_KEY, JSON.stringify(banks))
+  } catch {}
+}
 
 export default function StatementUploadModal({ open, onClose }: Props) {
   const [dragActive, setDragActive] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<PreviewData | null>(null)
   const [selectedBank, setSelectedBank] = useState<string>('')
+  const [banks, setBanks] = useState<string[]>(() => loadBanks())
+  const [addingBank, setAddingBank] = useState(false)
+  const [newBankName, setNewBankName] = useState('')
   const [editedCategories, setEditedCategories] = useState<Record<number, string>>({})
   const [skippedRows, setSkippedRows] = useState<Set<number>>(new Set())
   const [error, setError] = useState('')
@@ -99,8 +112,8 @@ export default function StatementUploadModal({ open, onClose }: Props) {
       setError('')
       // Предзаполняем автоопределённым банком, если пользователь ещё не выбрал
       if (!selectedBank && data.bank_name) {
-        const match = BANK_OPTIONS.find((b) => b === data.bank_name)
-        setSelectedBank(match || BANK_OPTIONS[BANK_OPTIONS.length - 1])
+        const match = banks.find((b) => b === data.bank_name)
+        setSelectedBank(match || banks[0] || '')
       }
     },
     onError: () => {
@@ -252,16 +265,82 @@ export default function StatementUploadModal({ open, onClose }: Props) {
                 </div>
                 <div className="flex items-center gap-2">
                   <label className="text-sm text-gray-600">Банк:</label>
-                  <select
-                    value={selectedBank}
-                    onChange={(e) => setSelectedBank(e.target.value)}
-                    className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-                  >
-                    <option value="">— Выберите —</option>
-                    {BANK_OPTIONS.map((b) => (
-                      <option key={b} value={b}>{b}</option>
-                    ))}
-                  </select>
+                  {!addingBank ? (
+                    <>
+                      <select
+                        value={selectedBank}
+                        onChange={(e) => setSelectedBank(e.target.value)}
+                        className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                      >
+                        <option value="">— Выберите —</option>
+                        {banks.map((b) => (
+                          <option key={b} value={b}>{b}</option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => {
+                          setNewBankName('')
+                          setAddingBank(true)
+                        }}
+                        className="px-2 py-1.5 text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="Добавить банк"
+                      >
+                        + Добавить
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <input
+                        type="text"
+                        value={newBankName}
+                        onChange={(e) => setNewBankName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            const trimmed = newBankName.trim()
+                            if (trimmed && !banks.includes(trimmed)) {
+                              const next = [...banks, trimmed]
+                              setBanks(next)
+                              saveBanks(next)
+                              setSelectedBank(trimmed)
+                            }
+                            setAddingBank(false)
+                            setNewBankName('')
+                          } else if (e.key === 'Escape') {
+                            setAddingBank(false)
+                            setNewBankName('')
+                          }
+                        }}
+                        autoFocus
+                        placeholder="Название банка"
+                        className="border border-blue-300 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                      />
+                      <button
+                        onClick={() => {
+                          const trimmed = newBankName.trim()
+                          if (trimmed && !banks.includes(trimmed)) {
+                            const next = [...banks, trimmed]
+                            setBanks(next)
+                            saveBanks(next)
+                            setSelectedBank(trimmed)
+                          }
+                          setAddingBank(false)
+                          setNewBankName('')
+                        }}
+                        className="px-2 py-1.5 text-sm text-emerald-600 hover:bg-emerald-50 rounded-lg"
+                      >
+                        ✓
+                      </button>
+                      <button
+                        onClick={() => {
+                          setAddingBank(false)
+                          setNewBankName('')
+                        }}
+                        className="px-2 py-1.5 text-sm text-gray-400 hover:bg-gray-100 rounded-lg"
+                      >
+                        ✕
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
 

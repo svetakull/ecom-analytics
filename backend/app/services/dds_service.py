@@ -288,7 +288,9 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
     outsource_other = _manual(manual, "outsource_other")
     outsource = _manual(manual, "outsource") + outsource_accountant + outsource_it + outsource_other
 
-    warehouse = _manual(manual, "warehouse")
+    warehouse_main = _manual(manual, "warehouse")
+    warehouse_kalmykia = _manual(manual, "warehouse_kalmykia")
+    warehouse = warehouse_main + warehouse_kalmykia
     courier = _manual(manual, "courier")
     travel = _manual(manual, "travel")
     bank_fees = _manual(manual, "bank_fees")
@@ -373,7 +375,9 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
         {"key": "outsource_accountant", "name": "Бухгалтер", "amount": round(outsource_accountant, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "outsource_accountant"},
         {"key": "outsource_it", "name": "ИТ-программист", "amount": round(outsource_it, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "outsource_it"},
         {"key": "outsource_other", "name": "Другое", "amount": round(outsource_other, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "outsource_other"},
-        {"key": "warehouse", "name": "Склад", "amount": round(warehouse, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "warehouse"},
+        {"key": "warehouse", "name": "Склад", "amount": round(warehouse, 2), "level": 1, "bold": True, "editable": False, "section": "expenses", "category": "warehouse"},
+        {"key": "warehouse_main", "name": "Склад основной", "amount": round(warehouse_main, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "warehouse"},
+        {"key": "warehouse_kalmykia", "name": "Склад Калмыкия", "amount": round(warehouse_kalmykia, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "warehouse_kalmykia"},
         {"key": "courier", "name": "Курьерская доставка", "amount": round(courier, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "courier"},
         {"key": "travel", "name": "Командировки", "amount": round(travel, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "travel"},
         {"key": "bank_fees", "name": "Комиссии банков", "amount": round(bank_fees, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "bank_fees"},
