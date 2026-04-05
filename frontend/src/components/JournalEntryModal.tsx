@@ -80,10 +80,17 @@ export default function JournalEntryModal({ open, onClose, editEntry }: Props) {
   const [showSuggestions, setShowSuggestions] = useState(false)
   const queryClient = useQueryClient()
 
-  // Fetch accounts
-  const { data: accounts = [] } = useQuery<{ id: number; name: string }[]>({
+  // Fetch accounts (backend возвращает string[])
+  const { data: accounts = [] } = useQuery<string[]>({
     queryKey: ['journal-accounts'],
-    queryFn: () => api.get('/journal/accounts').then((r) => r.data),
+    queryFn: () => api.get('/journal/accounts').then((r) => {
+      const d = r.data
+      if (Array.isArray(d)) {
+        // поддержка обеих форм: string[] или {name}[]
+        return d.map((item: any) => typeof item === 'string' ? item : (item?.name || '')).filter(Boolean)
+      }
+      return []
+    }),
     enabled: open,
   })
 
@@ -362,9 +369,9 @@ export default function JournalEntryModal({ open, onClose, editEntry }: Props) {
                   className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
                 >
                   <option value="">Выберите счёт</option>
-                  {accounts.map((a) => (
-                    <option key={a.id || a.name} value={a.name}>
-                      {a.name}
+                  {accounts.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
                     </option>
                   ))}
                 </select>

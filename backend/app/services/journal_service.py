@@ -86,9 +86,15 @@ def get_categories():
 
 
 def get_accounts(db: Session):
-    """Уникальные account_name из DDSBalance."""
-    rows = db.query(distinct(DDSBalance.account_name)).all()
-    return [r[0] for r in rows if r[0]]
+    """Уникальные счета из JournalEntry + DDSBalance."""
+    names = set()
+    for r in db.query(distinct(JournalEntry.account_name)).all():
+        if r[0]:
+            names.add(r[0])
+    for r in db.query(distinct(DDSBalance.account_name)).all():
+        if r[0]:
+            names.add(r[0])
+    return sorted(names)
 
 
 def get_journal(
