@@ -177,6 +177,39 @@ def _calc_section(db: Session, as_of: date, cogs: dict, stocks: dict) -> dict:
     liabilities_lines = []
     total_liabilities = 0.0
 
+    # Кредиты и займы (автоматически из Credit/CreditPayment)
+    from app.models.finance import Credit, CreditPayment
+    credits_active = db.query(Credit).filter(Credit.is_active == True).all()
+    credits_total = 0.0
+    credits_details = []
+    for cr in credits_active:
+        # Остаток = principal - сумма тела уже выплаченного (payment_date <= as_of)
+        body_paid = db.query(func.coalesce(func.sum(CreditPayment.body_amount), 0)).filter(
+            CreditPayment.credit_id == cr.id,
+            CreditPayment.payment_date <= as_of,
+        ).scalar()
+        balance = max(float(cr.principal or 0) - float(body_paid or 0), 0.0)
+        if balance > 0.01:
+            credits_total += balance
+            credits_details.append({
+                "key": f"liab_credit_{cr.id}",
+                "name": cr.name,
+                "amount": round(balance, 2),
+                "source": "auto",
+                "editable": False,
+                "level": 1,
+                "bold": False,
+            })
+
+    if credits_total > 0:
+        liabilities_lines.append({
+            "key": "liab_credits_group", "name": "Кредиты и займы",
+            "amount": round(credits_total, 2), "source": "auto",
+            "editable": False, "level": 0, "bold": True,
+        })
+        liabilities_lines.extend(credits_details)
+        total_liabilities += credits_total
+
     manual_liab = db.query(BalanceSheetManualEntry).filter(
         BalanceSheetManualEntry.section == "liabilities",
         BalanceSheetManualEntry.date <= as_of,
