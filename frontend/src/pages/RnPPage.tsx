@@ -1234,6 +1234,13 @@ function ChannelAggregateCard({ agg, days, externalCollapsed }: {
                 </tr>
                 <MetricsTable metrics={MAIN_METRICS} sku={agg} days={days} onSaveBuyout={noop} onSaveLogistics={noop} onSaveCommission={noop} />
               </tbody>
+
+              {/* ── Переходы (сводная) ── */}
+              <FunnelSection sku={agg} days={days} />
+
+              {/* ── Реклама (сводная) ── */}
+              <AdSection sku={agg} days={days} />
+
               <tbody>
                 <tr className="border-t border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors" onClick={() => setCostsOpen(v => !v)}>
                   <td colSpan={3 + days.length} className="px-4 py-2">

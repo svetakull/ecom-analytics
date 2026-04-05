@@ -655,38 +655,22 @@ def get_rnp_pivot(
             avg_price_after = float(row_orders[3] or 0)
             avg_spp = float(row_orders[4] or 0)
 
-            # Продажи за день.
-            # Источник зависит от канала: у Ozon/Lamoda нет таблицы sales,
-            # используем Order.status=DELIVERED.
-            if channel.type in (ChannelType.OZON, ChannelType.LAMODA):
-                row_sales = db.query(
-                    func.count(Order.id),
-                    func.sum(Order.price),
-                ).filter(
-                    Order.sku_id == sku.id,
-                    Order.channel_id == channel.id,
-                    Order.order_date == d,
-                    Order.status == OrderStatus.DELIVERED,
-                ).first()
-                s_qty = int(row_sales[0] or 0)
-                s_rub = float(row_sales[1] or 0)
-                avg_commission = 0.0
-                avg_logistics = 0.0
-            else:
-                row_sales = db.query(
-                    func.count(Sale.id),
-                    func.sum(Sale.price),
-                    func.avg(Sale.commission),
-                    func.avg(Sale.logistics),
-                ).filter(
-                    Sale.sku_id == sku.id,
-                    Sale.channel_id == channel.id,
-                    Sale.sale_date == d,
-                ).first()
-                s_qty = int(row_sales[0] or 0)
-                s_rub = float(row_sales[1] or 0)
-                avg_commission = float(row_sales[2] or 0)
-                avg_logistics = float(row_sales[3] or 0)
+            # Продажи за день (факт из таблицы sales — только для WB)
+            row_sales = db.query(
+                func.count(Sale.id),
+                func.sum(Sale.price),
+                func.avg(Sale.commission),
+                func.avg(Sale.logistics),
+            ).filter(
+                Sale.sku_id == sku.id,
+                Sale.channel_id == channel.id,
+                Sale.sale_date == d,
+            ).first()
+
+            s_qty = int(row_sales[0] or 0)
+            s_rub = float(row_sales[1] or 0)
+            avg_commission = float(row_sales[2] or 0)
+            avg_logistics = float(row_sales[3] or 0)
 
             # Возвраты за день
             r_qty = db.query(func.count(Return.id)).filter(
