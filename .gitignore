@@ -12,3 +12,4 @@ venv/
 .DS_Store
 *.log
 postgres_data/
+frontend/package-lock.json

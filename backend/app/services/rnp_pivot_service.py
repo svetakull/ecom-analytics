@@ -750,27 +750,15 @@ def get_rnp_pivot(
 
             # Комиссия и логистика на единицу
             if channel.type == ChannelType.OZON:
-                # Ozon: комиссия = commission / (p_before × qty) × 100.
-                # p_before = цена ДО соинвеста (marketing_seller_price из Prices API).
-                # Это позволяет видеть реальную ставку комиссии Ozon.
+                # Ozon: эффективная ставка = sum(commission) / sum(sale_amount) за 14 дней × 100.
+                # Дневные значения шумные из-за возвратов (комиссия возвращается продавцу),
+                # поэтому используем скользящее среднее по всему окну для стабильности.
                 if commission_pct_override_val is not None:
                     commission_pct = commission_pct_override_val
+                elif _total_sale > 0:
+                    commission_pct = _total_comm / _total_sale * 100
                 else:
-                    _oz_day = ozon_expense_map.get(d, {})
-                    _day_comm = _oz_day.get("commission", 0.0)
-                    _day_items = _oz_day.get("items", 0)
-                    if _day_items > 0 and p_before > 0:
-                        # Комиссия на единицу / цена до соинвеста
-                        _comm_per_unit = _day_comm / _day_items
-                        commission_pct = _comm_per_unit / p_before * 100
-                    elif _total_items > 0 and _total_sale > 0:
-                        # Нет данных за день — среднее за окно (стабильнее)
-                        # base: avg commission per unit / avg sale_amount per unit
-                        _avg_comm_unit = _total_comm / _total_items
-                        _avg_price_unit = _total_sale / _total_items
-                        commission_pct = (_avg_comm_unit / _avg_price_unit * 100) if _avg_price_unit > 0 else float(channel.commission_pct)
-                    else:
-                        commission_pct = float(channel.commission_pct)
+                    commission_pct = float(channel.commission_pct)
                 commission_per_unit = round(p_before * commission_pct / 100, 2)
                 logistics_per_unit = ozon_avg_logistics_per_unit
             else:
