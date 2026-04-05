@@ -81,19 +81,24 @@ export default function ReceiptsUploadModal({ open, onClose }: Props) {
     mutationFn: async () => {
       if (!rows) return Promise.reject()
       const accountName = 'Чеки'
-      const entries = rows
-        .filter((row) => !skippedRows.has(row.row_index) && !row.error && row.date && row.amount > 0)
-        .map((row) => ({
-          entry_type: row.entry_type || 'expense',
-          amount: Math.abs(row.amount),
-          date: row.date,
-          category: (editedCategories[row.row_index] ?? row.category) || 'other',
-          counterparty: row.counterparty,
-          description: row.description,
-          account_name: accountName,
-        }))
+      const today = new Date().toISOString().slice(0, 10)
+      const valid = rows.filter((row) => !skippedRows.has(row.row_index) && !row.error && row.amount > 0)
+      const skippedNoAmount = rows.filter(r => !skippedRows.has(r.row_index) && !r.error && !(r.amount > 0)).length
+      const entries = valid.map((row) => ({
+        entry_type: row.entry_type || 'expense',
+        amount: Math.abs(row.amount),
+        date: row.date || today,
+        category: (editedCategories[row.row_index] ?? row.category) || 'other',
+        counterparty: row.counterparty,
+        description: row.description,
+        account_name: accountName,
+      }))
       if (entries.length === 0) {
-        return Promise.reject(new Error('Нет валидных чеков для импорта'))
+        return Promise.reject(new Error(
+          skippedNoAmount > 0
+            ? `Нет чеков с распознанной суммой (пропущено: ${skippedNoAmount})`
+            : 'Нет валидных чеков для импорта'
+        ))
       }
       return api.post('/journal/upload-confirm', { entries, account_name: accountName })
     },
@@ -102,7 +107,8 @@ export default function ReceiptsUploadModal({ open, onClose }: Props) {
       handleClose()
     },
     onError: (err: any) => {
-      setError(err?.message || 'Ошибка импорта. Попробуйте снова.')
+      const detail = err?.response?.data?.detail || err?.message || 'Ошибка импорта. Попробуйте снова.'
+      setError(typeof detail === 'string' ? detail : JSON.stringify(detail))
     },
   })
 
@@ -140,7 +146,7 @@ export default function ReceiptsUploadModal({ open, onClose }: Props) {
   if (!open) return null
 
   const validCount = rows
-    ? rows.filter((r) => !skippedRows.has(r.row_index) && !r.error && r.date && r.amount > 0).length
+    ? rows.filter((r) => !skippedRows.has(r.row_index) && !r.error && r.amount > 0).length
     : 0
   const autoCount = rows ? rows.filter((r) => r.auto_classified).length : 0
 
