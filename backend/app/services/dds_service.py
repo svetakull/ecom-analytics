@@ -377,7 +377,10 @@ def _net_flow(auto: dict, manual: dict[str, float]) -> float:
 
     # Расходы
     exp_keys = [
-        "content", "external_ads", "external_ads_site", "buyout_services", "buyout_goods",
+        "content",
+        "external_ads", "external_ads_smm_strategy", "external_ads_personal_brand",
+        "external_ads_smm_brand", "external_ads_shootings_brand", "external_ads_site",
+        "buyout_services", "buyout_goods",
         "salary", "salary_manager", "salary_employee", "salary_smm", "salary_reels", "salary_pvz",
         "outsource", "outsource_accountant", "outsource_it", "outsource_other",
         "warehouse", "warehouse_kalmykia", "courier", "travel", "bank_fees",
@@ -447,7 +450,16 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
 
     # === II. РАСХОДЫ ===
     content = _manual(manual, "content")
-    external_ads = _manual(manual, "external_ads")
+    # Продвижение внешнее — детализация
+    external_ads_base = _manual(manual, "external_ads")
+    external_ads_smm_strategy = _manual(manual, "external_ads_smm_strategy")
+    external_ads_personal_brand = _manual(manual, "external_ads_personal_brand")
+    external_ads_smm_brand = _manual(manual, "external_ads_smm_brand")
+    external_ads_shootings_brand = _manual(manual, "external_ads_shootings_brand")
+    external_ads_total = (external_ads_base + external_ads_smm_strategy +
+                          external_ads_personal_brand + external_ads_smm_brand +
+                          external_ads_shootings_brand)
+    external_ads = external_ads_total  # для обратной совместимости в формуле
     buyout_services = _manual(manual, "buyout_services")
     buyout_goods = _manual(manual, "buyout_goods")
 
@@ -481,11 +493,18 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
     rent_pvz = _manual(manual, "rent_pvz")
     other_expense = _manual(manual, "other")
 
+    # Группа «Сайт»
+    site_total = external_ads_site
+    # Группа «ПВЗ» = Расходы ПВЗ + Аренда ПВЗ + ФОТ ПВЗ
+    # (salary_pvz уже входит в fot, поэтому вычтем и перенесём сюда)
+    fot = fot - salary_pvz  # вынимаем ФОТ ПВЗ из общего ФОТ
+    pvz_total = pvz + rent_pvz + salary_pvz
+
     itogo_rashody = (
-        content + external_ads + external_ads_site + buyout_services + buyout_goods +
+        content + external_ads + site_total + buyout_services + buyout_goods +
         fot + outsource + warehouse + courier + travel + delivery_rf +
         bank_fees + office + equipment + education +
-        subscriptions + new_products + pvz + rent_pvz + other_expense
+        subscriptions + new_products + pvz_total + other_expense
     )
 
     # === III. НАЛОГИ ===
@@ -557,8 +576,16 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
         # II. РАСХОДЫ
         {"key": "section_expenses", "name": "II. РАСХОДЫ — ФАКТ СПИСАНИЯ", "amount": round(itogo_rashody, 2), "level": 0, "bold": True, "editable": False, "section": "expenses", "category": None},
         {"key": "content", "name": "Контент", "amount": round(content, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "content"},
-        {"key": "external_ads", "name": "Продвижение внешнее", "amount": round(external_ads, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "external_ads"},
-        {"key": "external_ads_site", "name": "Реклама сайта (Яндекс Директ)", "amount": round(external_ads_site, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "external_ads_site"},
+        # Направление: Сайт
+        {"key": "site_group", "name": "Сайт", "amount": round(site_total, 2), "level": 1, "bold": False, "editable": False, "section": "expenses", "category": None},
+        {"key": "external_ads_site", "name": "Реклама сайта (Яндекс Директ)", "amount": round(external_ads_site, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "external_ads_site"},
+        # Направление: Продвижение внешнее
+        {"key": "external_ads", "name": "Продвижение внешнее", "amount": round(external_ads_total, 2), "level": 1, "bold": False, "editable": False, "section": "expenses", "category": None},
+        {"key": "external_ads_base", "name": "Общее", "amount": round(external_ads_base, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "external_ads"},
+        {"key": "external_ads_smm_strategy", "name": "СММ стратегия", "amount": round(external_ads_smm_strategy, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "external_ads_smm_strategy"},
+        {"key": "external_ads_personal_brand", "name": "Личный бренд", "amount": round(external_ads_personal_brand, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "external_ads_personal_brand"},
+        {"key": "external_ads_smm_brand", "name": "СММ продвижение бренда", "amount": round(external_ads_smm_brand, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "external_ads_smm_brand"},
+        {"key": "external_ads_shootings_brand", "name": "Съёмки для бренда", "amount": round(external_ads_shootings_brand, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "external_ads_shootings_brand"},
         {"key": "buyout_services", "name": "Выкупы-услуги", "amount": round(buyout_services, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "buyout_services"},
         {"key": "buyout_goods", "name": "Выкупы товар", "amount": round(buyout_goods, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "buyout_goods"},
         {"key": "fot", "name": "ФОТ", "amount": round(fot, 2), "level": 1, "bold": True, "editable": True, "section": "expenses", "category": "salary"},
@@ -566,7 +593,6 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
         {"key": "salary_employee", "name": "Менеджер", "amount": round(salary_employee, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "salary_employee"},
         {"key": "salary_smm", "name": "СММ-менеджер", "amount": round(salary_smm, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "salary_smm"},
         {"key": "salary_reels", "name": "Рилзмейкер", "amount": round(salary_reels, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "salary_reels"},
-        {"key": "salary_pvz", "name": "ФОТ ПВЗ", "amount": round(salary_pvz, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "salary_pvz"},
         {"key": "outsource", "name": "Аутсорс", "amount": round(outsource, 2), "level": 1, "bold": True, "editable": True, "section": "expenses", "category": "outsource"},
         {"key": "outsource_accountant", "name": "Бухгалтер", "amount": round(outsource_accountant, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "outsource_accountant"},
         {"key": "outsource_it", "name": "ИТ-программист", "amount": round(outsource_it, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "outsource_it"},
@@ -582,8 +608,11 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
         {"key": "education", "name": "Обучение", "amount": round(education, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "education"},
         {"key": "subscriptions", "name": "Подписка на сервисы", "amount": round(subscriptions, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "subscriptions"},
         {"key": "new_products", "name": "Новинки", "amount": round(new_products, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "new_products"},
-        {"key": "pvz", "name": "ПВЗ расходы", "amount": round(pvz, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "pvz"},
-        {"key": "rent_pvz", "name": "Аренда ПВЗ", "amount": round(rent_pvz, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "rent_pvz"},
+        # Направление: ПВЗ
+        {"key": "pvz_group", "name": "ПВЗ", "amount": round(pvz_total, 2), "level": 1, "bold": False, "editable": False, "section": "expenses", "category": None},
+        {"key": "pvz", "name": "Расходы ПВЗ", "amount": round(pvz, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "pvz"},
+        {"key": "rent_pvz", "name": "Аренда ПВЗ", "amount": round(rent_pvz, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "rent_pvz"},
+        {"key": "salary_pvz", "name": "ФОТ ПВЗ", "amount": round(salary_pvz, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "salary_pvz"},
         {"key": "delivery_rf", "name": "Доставка внутри РФ", "amount": round(delivery_rf, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "delivery_rf"},
         {"key": "other_expense", "name": "Прочее", "amount": round(other_expense, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "other"},
         {"key": "itogo_rashody", "name": "Итого расходы", "amount": round(itogo_rashody, 2), "level": 0, "bold": True, "editable": False, "section": "expenses", "category": None},

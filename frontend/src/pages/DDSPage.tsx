@@ -40,7 +40,7 @@ export default function DDSPage() {
   const [editingCell, setEditingCell] = useState<{ key: string; period: string; category: string } | null>(null)
   const [editValue, setEditValue] = useState('')
   // Сворачиваемые группы (по умолчанию свёрнуты)
-  const EXPANDABLE_KEYS = ['postuplenie_na_schet', 'vlozheniya', 'fot', 'outsource', 'warehouse']
+  const EXPANDABLE_KEYS = ['postuplenie_na_schet', 'vlozheniya', 'fot', 'outsource', 'warehouse', 'site_group', 'pvz_group', 'external_ads']
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const toggleGroup = (key: string) => {
     setExpandedGroups(prev => {

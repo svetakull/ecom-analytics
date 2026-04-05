@@ -26,7 +26,11 @@ DDS_CATEGORIES = sorted([
     {"key": "credit_received", "name": "Поступления кредитных средств", "section": "income"},
     # --- РАСХОДЫ ---
     {"key": "content", "name": "Контент", "section": "expenses"},
-    {"key": "external_ads", "name": "Продвижение внешнее", "section": "expenses"},
+    {"key": "external_ads", "name": "Продвижение внешнее (общее)", "section": "expenses"},
+    {"key": "external_ads_smm_strategy", "name": "СММ стратегия", "section": "expenses"},
+    {"key": "external_ads_personal_brand", "name": "Личный бренд", "section": "expenses"},
+    {"key": "external_ads_smm_brand", "name": "СММ продвижение бренда", "section": "expenses"},
+    {"key": "external_ads_shootings_brand", "name": "Съёмки для бренда", "section": "expenses"},
     {"key": "external_ads_site", "name": "Реклама сайта (Яндекс Директ)", "section": "expenses"},
     {"key": "buyout_services", "name": "Выкупы-услуги", "section": "expenses"},
     {"key": "buyout_goods", "name": "Выкупы товар", "section": "expenses"},
