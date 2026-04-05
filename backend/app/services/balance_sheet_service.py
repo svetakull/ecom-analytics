@@ -46,12 +46,43 @@ def _stock_snapshot(db: Session, as_of: date) -> dict:
 
 
 def _cash_balances(db: Session, as_of: date) -> dict[str, float]:
-    """Остатки по счетам."""
-    last_date = db.query(func.max(DDSBalance.date)).filter(DDSBalance.date <= as_of).scalar()
-    if not last_date:
-        return {}
-    rows = db.query(DDSBalance.account_name, DDSBalance.amount).filter(DDSBalance.date == last_date).all()
-    return {r.account_name: float(r.amount) for r in rows}
+    """Остатки по счетам. Источники:
+    1) DDSManualEntry с категориями balance_acc:*, mp_balance_*, mp_transit (последнее значение ≤ as_of)
+    2) DDSBalance (устаревший)."""
+    from app.models.finance import DDSManualEntry
+    balances: dict[str, float] = {}
+
+    # Из DDS manual entries (balance_acc:Счёт, mp_balance_wb, mp_balance_ozon, mp_transit)
+    entries = db.query(DDSManualEntry).filter(
+        DDSManualEntry.date <= as_of,
+    ).filter(
+        (DDSManualEntry.category.like("balance_acc:%")) |
+        (DDSManualEntry.category.in_(["mp_balance_wb", "mp_balance_ozon", "mp_transit"]))
+    ).order_by(DDSManualEntry.date.desc(), DDSManualEntry.id.desc()).all()
+    seen = set()
+    for e in entries:
+        if e.category in seen:
+            continue
+        seen.add(e.category)
+        if e.category.startswith("balance_acc:"):
+            name = e.category.split(":", 1)[1]
+        elif e.category == "mp_balance_wb":
+            name = "Баланс WB"
+        elif e.category == "mp_balance_ozon":
+            name = "Баланс Ozon"
+        elif e.category == "mp_transit":
+            name = "Транзит (в пути)"
+        else:
+            name = e.category
+        balances[name] = float(e.amount or 0)
+
+    # Фолбэк: устаревший DDSBalance
+    if not balances:
+        last_date = db.query(func.max(DDSBalance.date)).filter(DDSBalance.date <= as_of).scalar()
+        if last_date:
+            rows = db.query(DDSBalance.account_name, DDSBalance.amount).filter(DDSBalance.date == last_date).all()
+            balances = {r.account_name: float(r.amount) for r in rows}
+    return balances
 
 
 def _mp_receivables(db: Session, as_of: date) -> dict[str, float]:
@@ -72,6 +103,7 @@ def _mp_receivables(db: Session, as_of: date) -> dict[str, float]:
         cutoff = as_of - timedelta(days=delay_days)
         row = db.query(
             func.sum(SkuDailyExpense.ppvz_for_pay).label("ppvz"),
+            func.sum(SkuDailyExpense.sale_amount).label("sale_amount"),
             func.sum(SkuDailyExpense.compensation_wb).label("comp_wb"),
             func.sum(SkuDailyExpense.logistics).label("logistics"),
             func.sum(SkuDailyExpense.storage).label("storage"),
@@ -82,33 +114,60 @@ def _mp_receivables(db: Session, as_of: date) -> dict[str, float]:
             func.sum(SkuDailyExpense.other_deductions).label("other_ded"),
             func.sum(SkuDailyExpense.penalty).label("penalty"),
             func.sum(SkuDailyExpense.credit_deduction).label("credit"),
+            func.sum(SkuDailyExpense.commission).label("commission"),
+            func.sum(SkuDailyExpense.acquiring).label("acquiring"),
         ).filter(
             SkuDailyExpense.channel_id == ch.id,
             SkuDailyExpense.date > cutoff,
             SkuDailyExpense.date <= as_of,
         ).first()
-        if row and row.ppvz:
-            itogo = (
-                float(row.ppvz or 0)
-                + float(row.comp_wb or 0)
-                - float(row.logistics or 0)
-                - float(row.storage or 0)
-                - float(row.acceptance or 0)
-                - float(row.advertising or 0)
-                - float(row.subscription or 0)
-                - float(row.reviews or 0)
-                - float(row.other_ded or 0)
-                - float(row.penalty or 0)
-                - float(row.credit or 0)
-            )
-            result[mp] = max(itogo, 0)  # дебиторка не может быть отрицательной
+        if row:
+            # WB: ppvz_for_pay это уже "К перечислению" (чистая сумма)
+            # Ozon: sale_amount (accruals) минус commission, logistics, acquiring
+            if mp == "wb":
+                base = float(row.ppvz or 0)
+                itogo = (
+                    base
+                    + float(row.comp_wb or 0)
+                    - float(row.logistics or 0)
+                    - float(row.storage or 0)
+                    - float(row.acceptance or 0)
+                    - float(row.advertising or 0)
+                    - float(row.subscription or 0)
+                    - float(row.reviews or 0)
+                    - float(row.other_ded or 0)
+                    - float(row.penalty or 0)
+                    - float(row.credit or 0)
+                )
+            else:
+                # Ozon/Lamoda: sale_amount (accruals) минус все удержания
+                itogo = (
+                    float(row.sale_amount or 0)
+                    - float(row.commission or 0)
+                    - float(row.logistics or 0)
+                    - float(row.acquiring or 0)
+                    - float(row.other_ded or 0)
+                    - float(row.storage or 0)
+                    - float(row.penalty or 0)
+                    - float(row.acceptance or 0)
+                )
+            result[mp] = max(itogo, 0)
         else:
             result[mp] = 0.0
     return result
 
 
 def _retained_earnings(db: Session, as_of: date) -> float:
-    """Нераспределённая прибыль = кумулятивная чистая прибыль."""
+    """Нераспределённая прибыль = кумулятивная чистая прибыль.
+
+    = валовая прибыль от МП (accruals − все удержания МП − COGS)
+      − операционные расходы (из DDS: ФОТ, аренда, реклама внешн, бухгалтер, и т.д.)
+      − налоги (УСН, НДС, страховые, НДФЛ, таможня)
+      − % по кредитам (тело не вычитаем — это обязательство)
+      − дивиденды выплаченные
+      + вложения инвесторов и кредитные средства НЕ добавляем (это пассив/капитал)
+    """
+    # 1) Валовая прибыль от МП (то что остаётся после прямых удержаний)
     row = db.query(
         func.sum(SkuDailyExpense.compensation - SkuDailyExpense.commission
                  - SkuDailyExpense.logistics - SkuDailyExpense.storage
@@ -117,13 +176,35 @@ def _retained_earnings(db: Session, as_of: date) -> float:
                  - SkuDailyExpense.penalty - SkuDailyExpense.acceptance
                  - SkuDailyExpense.acquiring)
     ).filter(SkuDailyExpense.date <= as_of).scalar()
-    gross = float(row or 0)
-    # Минус примерная себестоимость (items_count × avg COGS ~900)
+    gross_mp = float(row or 0)
+
+    # 2) COGS = items × средняя себестоимость ~900
     items = db.query(func.sum(SkuDailyExpense.items_count - SkuDailyExpense.return_count)).filter(
         SkuDailyExpense.date <= as_of).scalar()
     items = int(items or 0)
-    cogs_estimate = items * 900  # средняя себестоимость
-    return gross - cogs_estimate
+    cogs_estimate = items * 900
+
+    # 3) Операционные расходы из DDS (за вычетом доходных категорий, капитала и тела кредитов)
+    from app.models.finance import DDSManualEntry
+    exclude_cats = {
+        # Доходы (income) — не уменьшают прибыль
+        "income_wb", "income_ozon", "income_lamoda", "income_site",
+        "income_opt", "income_pvz", "income_deposit", "mp_payment",
+        # Капитал/пассивы (не уменьшают прибыль)
+        "investor_contribution", "credit_received",
+        # Тело кредита — это погашение обязательства, не расход
+        "bank_credit", "wb_deductions",
+        # Балансы счетов
+    }
+    opex_row = db.query(func.sum(DDSManualEntry.amount)).filter(
+        DDSManualEntry.date <= as_of,
+        ~DDSManualEntry.category.in_(exclude_cats),
+        ~DDSManualEntry.category.like("balance_acc:%"),
+        ~DDSManualEntry.category.in_(["mp_balance_wb", "mp_balance_ozon", "mp_transit", "balance_start"]),
+    ).scalar()
+    opex = float(opex_row or 0)
+
+    return gross_mp - cogs_estimate - opex
 
 
 def _calc_section(db: Session, as_of: date, cogs: dict, stocks: dict) -> dict:
