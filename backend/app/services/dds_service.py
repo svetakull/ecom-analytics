@@ -377,16 +377,16 @@ def _net_flow(auto: dict, manual: dict[str, float]) -> float:
 
     # Расходы
     exp_keys = [
-        "content", "external_ads", "buyout_services", "buyout_goods",
-        "salary", "salary_manager", "salary_employee", "salary_smm", "salary_reels",
+        "content", "external_ads", "external_ads_site", "buyout_services", "buyout_goods",
+        "salary", "salary_manager", "salary_employee", "salary_smm", "salary_reels", "salary_pvz",
         "outsource", "outsource_accountant", "outsource_it", "outsource_other",
         "warehouse", "warehouse_kalmykia", "courier", "travel", "bank_fees",
         "office", "equipment", "education", "subscriptions", "new_products", "pvz",
-        "delivery_rf",
+        "delivery_rf", "rent_pvz", "other",
     ]
     rashody = sum(_manual(manual, k) for k in exp_keys)
 
-    tax = sum(_manual(manual, k) for k in ("usn", "insurance", "ndfl"))
+    tax = sum(_manual(manual, k) for k in ("usn", "insurance", "ndfl", "customs"))
     avansy = sum(_manual(manual, k) for k in ("purchase_china", "delivery_china", "ff", "ff_storage", "delivery_mp"))
     kredity = sum(_manual(manual, k) for k in ("wb_deductions", "bank_credit", "credit_interest"))
     dividendy = sum(_manual(manual, k) for k in ("dividend_investor", "dividend_manager", "dividend_other"))
@@ -455,7 +455,8 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
     salary_employee = _manual(manual, "salary_employee")
     salary_smm = _manual(manual, "salary_smm")
     salary_reels = _manual(manual, "salary_reels")
-    fot = _manual(manual, "salary") + salary_manager + salary_employee + salary_smm + salary_reels
+    salary_pvz = _manual(manual, "salary_pvz")
+    fot = _manual(manual, "salary") + salary_manager + salary_employee + salary_smm + salary_reels + salary_pvz
 
     outsource_accountant = _manual(manual, "outsource_accountant")
     outsource_it = _manual(manual, "outsource_it")
@@ -476,19 +477,23 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
     pvz = _manual(manual, "pvz")
 
     delivery_rf = _manual(manual, "delivery_rf")
+    external_ads_site = _manual(manual, "external_ads_site")
+    rent_pvz = _manual(manual, "rent_pvz")
+    other_expense = _manual(manual, "other")
 
     itogo_rashody = (
-        content + external_ads + buyout_services + buyout_goods +
+        content + external_ads + external_ads_site + buyout_services + buyout_goods +
         fot + outsource + warehouse + courier + travel + delivery_rf +
         bank_fees + office + equipment + education +
-        subscriptions + new_products + pvz
+        subscriptions + new_products + pvz + rent_pvz + other_expense
     )
 
     # === III. НАЛОГИ ===
     usn = _manual(manual, "usn")
     insurance = _manual(manual, "insurance")
     ndfl = _manual(manual, "ndfl")
-    itogo_nalogi = usn + insurance + ndfl
+    customs = _manual(manual, "customs")
+    itogo_nalogi = usn + insurance + ndfl + customs
 
     # === IV. АВАНСЫ (ЗАКУПКА) ===
     purchase_china = _manual(manual, "purchase_china")
@@ -543,7 +548,7 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
         {"key": "postuplenie_pvz", "name": "ПВЗ", "amount": round(postuplenie_pvz, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
         {"key": "postuplenie_deposit", "name": "Депозит", "amount": round(postuplenie_deposit, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
         {"key": "postuplenie_mp_other", "name": "МП (прочее)", "amount": round(postuplenie_mp_other, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
-        {"key": "vlozheniya", "name": "Вложения", "amount": round(investor_contribution + credit_received, 2), "level": 1, "bold": True, "editable": False, "section": "income", "category": None},
+        {"key": "vlozheniya", "name": "Вложения", "amount": round(investor_contribution + credit_received, 2), "level": 1, "bold": False, "editable": False, "section": "income", "category": None},
         {"key": "investor_contribution", "name": "Вложения инвестора", "amount": round(investor_contribution, 2), "level": 2, "bold": False, "editable": True, "section": "income", "category": "investor_contribution"},
         {"key": "credit_received", "name": "Поступления кредитных средств", "amount": round(credit_received, 2), "level": 2, "bold": False, "editable": True, "section": "income", "category": "credit_received"},
         {"key": "kompensacii", "name": "Компенсации", "amount": round(kompensacii, 2), "level": 1, "bold": False, "editable": False, "section": "income", "category": None},
@@ -553,6 +558,7 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
         {"key": "section_expenses", "name": "II. РАСХОДЫ — ФАКТ СПИСАНИЯ", "amount": round(itogo_rashody, 2), "level": 0, "bold": True, "editable": False, "section": "expenses", "category": None},
         {"key": "content", "name": "Контент", "amount": round(content, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "content"},
         {"key": "external_ads", "name": "Продвижение внешнее", "amount": round(external_ads, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "external_ads"},
+        {"key": "external_ads_site", "name": "Реклама сайта (Яндекс Директ)", "amount": round(external_ads_site, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "external_ads_site"},
         {"key": "buyout_services", "name": "Выкупы-услуги", "amount": round(buyout_services, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "buyout_services"},
         {"key": "buyout_goods", "name": "Выкупы товар", "amount": round(buyout_goods, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "buyout_goods"},
         {"key": "fot", "name": "ФОТ", "amount": round(fot, 2), "level": 1, "bold": True, "editable": True, "section": "expenses", "category": "salary"},
@@ -560,6 +566,7 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
         {"key": "salary_employee", "name": "Менеджер", "amount": round(salary_employee, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "salary_employee"},
         {"key": "salary_smm", "name": "СММ-менеджер", "amount": round(salary_smm, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "salary_smm"},
         {"key": "salary_reels", "name": "Рилзмейкер", "amount": round(salary_reels, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "salary_reels"},
+        {"key": "salary_pvz", "name": "ФОТ ПВЗ", "amount": round(salary_pvz, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "salary_pvz"},
         {"key": "outsource", "name": "Аутсорс", "amount": round(outsource, 2), "level": 1, "bold": True, "editable": True, "section": "expenses", "category": "outsource"},
         {"key": "outsource_accountant", "name": "Бухгалтер", "amount": round(outsource_accountant, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "outsource_accountant"},
         {"key": "outsource_it", "name": "ИТ-программист", "amount": round(outsource_it, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "outsource_it"},
@@ -576,7 +583,9 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
         {"key": "subscriptions", "name": "Подписка на сервисы", "amount": round(subscriptions, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "subscriptions"},
         {"key": "new_products", "name": "Новинки", "amount": round(new_products, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "new_products"},
         {"key": "pvz", "name": "ПВЗ расходы", "amount": round(pvz, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "pvz"},
+        {"key": "rent_pvz", "name": "Аренда ПВЗ", "amount": round(rent_pvz, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "rent_pvz"},
         {"key": "delivery_rf", "name": "Доставка внутри РФ", "amount": round(delivery_rf, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "delivery_rf"},
+        {"key": "other_expense", "name": "Прочее", "amount": round(other_expense, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "other"},
         {"key": "itogo_rashody", "name": "Итого расходы", "amount": round(itogo_rashody, 2), "level": 0, "bold": True, "editable": False, "section": "expenses", "category": None},
 
         # III. НАЛОГИ
@@ -584,6 +593,7 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
         {"key": "usn", "name": "УСН и взнос 1%", "amount": round(usn, 2), "level": 1, "bold": False, "editable": True, "section": "taxes", "category": "usn"},
         {"key": "insurance", "name": "Страховые взносы", "amount": round(insurance, 2), "level": 1, "bold": False, "editable": True, "section": "taxes", "category": "insurance"},
         {"key": "ndfl", "name": "НДФЛ", "amount": round(ndfl, 2), "level": 1, "bold": False, "editable": True, "section": "taxes", "category": "ndfl"},
+        {"key": "customs", "name": "Таможенные платежи", "amount": round(customs, 2), "level": 1, "bold": False, "editable": True, "section": "taxes", "category": "customs"},
         {"key": "itogo_nalogi", "name": "Итого налоги", "amount": round(itogo_nalogi, 2), "level": 0, "bold": True, "editable": False, "section": "taxes", "category": None},
 
         # IV. АВАНСЫ (ЗАКУПКА)

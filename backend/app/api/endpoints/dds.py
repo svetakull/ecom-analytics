@@ -20,7 +20,7 @@ router = APIRouter()
 class DDSManualEntryCreate(BaseModel):
     date: date
     category: str
-    name: str
+    name: Optional[str] = None
     amount: float
     section: str = "operating"
     channel_id: Optional[int] = None
@@ -99,10 +99,19 @@ def create_manual_entry(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    # При сохранении баланса по счёту/МП — сначала удаляем существующую
+    # запись за эту же дату + категорию, чтобы не накапливать дубли.
+    if body.category and (body.category.startswith("balance_acc:") or body.category in ("mp_balance_wb", "mp_balance_ozon", "mp_transit", "balance_start")):
+        db.query(DDSManualEntry).filter(
+            DDSManualEntry.category == body.category,
+            DDSManualEntry.date == body.date,
+        ).delete(synchronize_session=False)
+        db.commit()
+
     entry = DDSManualEntry(
         date=body.date,
         category=body.category,
-        name=body.name,
+        name=body.name or body.category,
         amount=body.amount,
         section=body.section,
         channel_id=body.channel_id,
