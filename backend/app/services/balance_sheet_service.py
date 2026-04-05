@@ -13,14 +13,45 @@ from app.models.sales import SkuDailyExpense
 
 
 def _cogs_map(db: Session, as_of: date) -> dict[int, float]:
-    """SKU ID → себестоимость за единицу."""
+    """SKU ID → себестоимость за единицу.
+    Приоритет как в РнП: cost_prices → SKUCostHistory → ProductBatch."""
+    from app.models.inventory import ProductBatch
+    result: dict[int, float] = {}
+
+    # 1) Новый модуль cost_prices
+    try:
+        from app.services.cost_price_service import resolve_cogs_per_unit
+        # Получаем все sku_channels чтобы вызвать resolve по каждому
+        from app.models.catalog import SKUChannel
+        sc_rows = db.query(SKUChannel.sku_id, SKUChannel.channel_id).all()
+        for sku_id, channel_id in sc_rows:
+            if sku_id in result:
+                continue
+            try:
+                val = resolve_cogs_per_unit(db, sku_id, channel_id, as_of)
+                if val > 0:
+                    result[sku_id] = float(val)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # 2) SKUCostHistory — для тех, кого не нашли в cost_prices
     rows = db.query(SKUCostHistory).filter(SKUCostHistory.effective_from <= as_of).order_by(
         SKUCostHistory.sku_id, SKUCostHistory.effective_from.desc()
     ).all()
-    result = {}
     for r in rows:
         if r.sku_id not in result:
             result[r.sku_id] = float(r.cost_per_unit)
+
+    # 3) ProductBatch fallback — для тех, кого нет в cost_prices/SKUCostHistory
+    batches = db.query(ProductBatch).order_by(
+        ProductBatch.sku_id, ProductBatch.batch_date.desc()
+    ).all()
+    for b in batches:
+        if b.sku_id not in result:
+            result[b.sku_id] = float(b.total_cost_per_unit or 0)
+
     return result
 
 
@@ -194,11 +225,16 @@ def _retained_earnings(db: Session, as_of: date) -> float:
     ).filter(SkuDailyExpense.date <= as_of).scalar()
     gross_mp = float(row or 0)
 
-    # 2) COGS = items × средняя себестоимость ~900
-    items = db.query(func.sum(SkuDailyExpense.items_count - SkuDailyExpense.return_count)).filter(
-        SkuDailyExpense.date <= as_of).scalar()
-    items = int(items or 0)
-    cogs_estimate = items * 900
+    # 2) COGS проданных товаров = sum(items_count × cogs_per_unit) по каждому SKU
+    cogs_map = _cogs_map(db, as_of)
+    items_per_sku = db.query(
+        SkuDailyExpense.sku_id,
+        func.sum(SkuDailyExpense.items_count - SkuDailyExpense.return_count).label("net_items")
+    ).filter(SkuDailyExpense.date <= as_of).group_by(SkuDailyExpense.sku_id).all()
+    cogs_estimate = 0.0
+    for r in items_per_sku:
+        c = cogs_map.get(r.sku_id, 900)
+        cogs_estimate += max(int(r.net_items or 0), 0) * c
 
     # 3) Операционные расходы из DDS (за вычетом доходных категорий, капитала и тела кредитов)
     from app.models.finance import DDSManualEntry
@@ -239,6 +275,21 @@ def _calc_section(db: Session, as_of: date, cogs: dict, stocks: dict) -> dict:
     stock_value = sum(stocks["qty"].get(sid, 0) * cogs.get(sid, 0) for sid in set(stocks["qty"]) | set(cogs))
     assets_lines.append({"key": "stock_mp", "name": "Товары на складах МП", "amount": round(stock_value, 2), "source": "auto", "editable": False, "level": 0, "bold": False})
 
+    # 2b. Товары на собственном складе (ручной ввод)
+    own_warehouse_rec = db.query(BalanceSheetManualEntry).filter(
+        BalanceSheetManualEntry.section == "assets",
+        BalanceSheetManualEntry.category == "own_warehouse",
+        BalanceSheetManualEntry.date <= as_of,
+    ).order_by(BalanceSheetManualEntry.date.desc(), BalanceSheetManualEntry.id.desc()).first()
+    own_warehouse_val = float(own_warehouse_rec.amount) if own_warehouse_rec else 0
+    if own_warehouse_val > 0:
+        assets_lines.append({
+            "key": "stock_own", "name": "Товары на собственном складе",
+            "amount": round(own_warehouse_val, 2),
+            "source": "manual", "editable": True, "level": 0, "bold": False,
+            "entry_id": own_warehouse_rec.id if own_warehouse_rec else None,
+        })
+
     # 3. В пути к клиенту
     transit_to = sum(stocks["in_way_to"].get(sid, 0) * cogs.get(sid, 0) for sid in set(stocks["in_way_to"]) | set(cogs))
     assets_lines.append({"key": "in_transit_to", "name": "Товары в пути к клиенту", "amount": round(transit_to, 2), "source": "auto", "editable": False, "level": 0, "bold": False})
@@ -267,7 +318,7 @@ def _calc_section(db: Session, as_of: date, cogs: dict, stocks: dict) -> dict:
             seen_cats.add(e.category)
             assets_lines.append({"key": f"manual_{e.category}", "name": e.name, "amount": float(e.amount), "source": "manual", "editable": True, "level": 0, "bold": False, "entry_id": e.id})
 
-    total_assets = total_cash + stock_value + transit_to + transit_from + total_recv + sum(float(e.amount) for e in manual_assets if e.category in seen_cats)
+    total_assets = total_cash + stock_value + own_warehouse_val + transit_to + transit_from + total_recv + sum(float(e.amount) for e in manual_assets if e.category in seen_cats)
     assets_lines.append({"key": "total_assets", "name": "ИТОГО АКТИВЫ", "amount": round(total_assets, 2), "source": "auto", "editable": False, "level": 0, "bold": True})
 
     # --- ПАССИВЫ ---
