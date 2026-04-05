@@ -173,7 +173,7 @@ def get_opiu(
     # Предрасчёт налогов для каждой недели по настройкам tax_rates
     # (неделя принадлежит месяцу по четвергу — ISO rule)
     from app.api.endpoints.tax_rates import get_effective_tax_rates
-    from datetime import datetime as _dt, timedelta as _td
+    from datetime import datetime as _dt, timedelta as _td, date as _date_cls
     for period, m in monthly.items():
         try:
             week_start = _dt.strptime(period, "%Y-%m-%d").date()
@@ -181,11 +181,32 @@ def get_opiu(
         except Exception:
             m["nds_amount"] = 0
             m["usn_amount"] = 0
+            m["credit_interest"] = 0
             continue
         tr = get_effective_tax_rates(db, year=thursday.year, month=thursday.month, channel_id=None)
         prodazhi = (m.get("compensation", 0) or 0) - (m.get("commission", 0) or 0)
         m["nds_amount"] = round(prodazhi * (tr["nds_pct"] / 100), 2)
         m["usn_amount"] = round(prodazhi * (tr["usn_pct"] / 100), 2)
+        m["credit_interest"] = 0
+
+    # Проценты по кредитам — сумма CreditPayment.interest_amount по неделям
+    # (только фактически оплаченные, не плановые)
+    from app.models.finance import CreditPayment
+    today_date = _date_cls.today()
+    credit_rows = db.query(
+        func.date_trunc("week", CreditPayment.payment_date).label("week"),
+        func.sum(CreditPayment.interest_amount).label("interest"),
+    ).filter(
+        CreditPayment.payment_date >= date_from,
+        CreditPayment.payment_date <= date_to,
+        CreditPayment.payment_date <= today_date,
+    ).group_by("week").all()
+    for row in credit_rows:
+        if not row.week:
+            continue
+        p = row.week.strftime("%Y-%m-%d")
+        if p in monthly:
+            monthly[p]["credit_interest"] = float(row.interest or 0)
 
     periods_result = []
     prev_month = None
@@ -289,7 +310,10 @@ def _build_lines(data: dict, period: str, db=None) -> list:
     usn = data.get("usn_amount", 0) or 0
     taxes = nds + usn
 
-    chistaya = ebitda - taxes
+    # % по кредитам (уменьшает чистую прибыль)
+    credit_interest = data.get("credit_interest", 0) or 0
+
+    chistaya = ebitda - taxes - credit_interest
 
     # % от реализации
     def pct(val):
@@ -329,6 +353,7 @@ def _build_lines(data: dict, period: str, db=None) -> list:
         {"key": "nds_group", "name": "НДС", "amount": round(nds, 2), "pct": pct(nds), "level": 1},
         {"key": "usn", "name": "УСН", "amount": round(usn, 2), "pct": pct(usn), "level": 1},
 
+        {"key": "credit_interest", "name": "% по кредитам", "amount": round(credit_interest, 2), "pct": pct(credit_interest), "level": 0},
         {"key": "vznosy", "name": "Страховые взносы", "amount": 0, "pct": 0, "level": 0, "editable": True},
         {"key": "ndfl", "name": "НДФЛ", "amount": 0, "pct": 0, "level": 0, "editable": True},
 

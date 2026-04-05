@@ -123,6 +123,28 @@ def get_dds(
         period = row.week.strftime("%Y-%m-%d") if row.week else "unknown"
         manual_weekly[period][row.category] += float(row.amount or 0)
 
+    # --- Платежи по кредитам (CreditPayment): проценты → credit_interest,
+    #     тело → bank_credit. Считаем только фактически оплаченные
+    #     (payment_date <= today), без плановых. ---
+    from app.models.finance import CreditPayment
+    from datetime import date as _date_cls
+    today_date = _date_cls.today()
+    credit_rows = db.query(
+        func.date_trunc("week", CreditPayment.payment_date).label("week"),
+        func.sum(CreditPayment.body_amount).label("body"),
+        func.sum(CreditPayment.interest_amount).label("interest"),
+    ).filter(
+        CreditPayment.payment_date >= date_from,
+        CreditPayment.payment_date <= date_to,
+        CreditPayment.payment_date <= today_date,
+    ).group_by("week").all()
+    for row in credit_rows:
+        if not row.week:
+            continue
+        period = row.week.strftime("%Y-%m-%d")
+        manual_weekly[period]["credit_interest"] += float(row.interest or 0)
+        manual_weekly[period]["bank_credit"] += float(row.body or 0)
+
     # --- Остатки из DDSBalance ---
     balance_q = db.query(
         func.date_trunc("week", DDSBalance.date).label("week"),
