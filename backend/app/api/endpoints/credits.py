@@ -87,6 +87,10 @@ def _serialize_payment(p: CreditPayment) -> dict:
 
 
 def _summary(db: Session, credit: Credit) -> dict:
+    from datetime import date as _date_cls
+    today = _date_cls.today()
+    # Считаем только фактические платежи (дата ≤ сегодня),
+    # плановые в будущем не учитываем
     agg = (
         db.query(
             func.coalesce(func.sum(CreditPayment.body_amount), 0).label("body_paid"),
@@ -95,6 +99,7 @@ def _summary(db: Session, credit: Credit) -> dict:
             func.count(CreditPayment.id).label("payments_count"),
         )
         .filter(CreditPayment.credit_id == credit.id)
+        .filter(CreditPayment.payment_date <= today)
         .first()
     )
     body_paid = float(agg.body_paid or 0)
