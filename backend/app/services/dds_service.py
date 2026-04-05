@@ -334,8 +334,8 @@ def get_dds(
         key = line.get("key", "")
         if key.startswith("itogo_") or key.startswith("section_"):
             return True
-        if key.startswith("balance_acc_") or key.startswith("mp_balance_") or key in ("mp_transit", "balance_computed", "balance_diff"):
-            return True  # строки раздела VII — всегда показываем для ручного ввода
+        if key.startswith("balance_acc_") or key.startswith("mp_balance_") or key in ("mp_transit", "balance_computed", "balance_diff", "add_balance_account", "vlozheniya", "investor_contribution", "credit_received"):
+            return True  # строки разделов Вложения и VII — всегда показываем для ручного ввода
         if key in ("ostatok_nachalo", "ostatok_konec", "chisty_potok"):
             return True
         return False
@@ -635,6 +635,8 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
     lines.append({"key": "mp_balance_wb", "name": "Баланс WB", "amount": round(mp_balance_wb, 2), "level": 1, "bold": False, "editable": True, "section": "balances", "category": "mp_balance_wb"})
     lines.append({"key": "mp_balance_ozon", "name": "Баланс Ozon", "amount": round(mp_balance_ozon, 2), "level": 1, "bold": False, "editable": True, "section": "balances", "category": "mp_balance_ozon"})
     lines.append({"key": "mp_transit", "name": "Транзит (в пути)", "amount": round(mp_transit, 2), "level": 1, "bold": False, "editable": True, "section": "balances", "category": "mp_transit"})
+    # Кнопка для добавления нового счёта (специальный тип строки)
+    lines.append({"key": "add_balance_account", "name": "+ Добавить счёт", "amount": 0, "level": 1, "bold": False, "editable": False, "section": "balances", "category": None, "is_action": "add_account"})
     lines.append({"key": "itogo_balance_accounts", "name": "Итого ДС (счета + МП + транзит)", "amount": round(sum_balance_accounts, 2), "level": 0, "bold": True, "editable": False, "section": "balances", "category": None})
     lines.append({"key": "balance_computed", "name": "Остаток на конец (учётный)", "amount": round(ostatok_konec, 2), "level": 1, "bold": False, "editable": False, "section": "balances", "category": None})
     lines.append({"key": "balance_diff", "name": "Расхождение (факт − учётный)", "amount": round(diff_balance, 2), "level": 1, "bold": False, "editable": False, "section": "balances", "category": None})
