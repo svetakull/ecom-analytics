@@ -588,6 +588,7 @@ def get_rnp_pivot(
                     "commission": float(exp.commission),
                     "commission_gross": float(exp.sale_commission_gross or 0),
                     "acquiring_gross": float(exp.acquiring_gross or 0),
+                    "acquiring": float(exp.acquiring or 0),  # эквайринг отдельной операцией
                     "logistics": float(exp.logistics),
                     "storage": float(exp.storage),
                     "items": int(exp.items_count),
@@ -600,14 +601,18 @@ def get_rnp_pivot(
             _total_comm = sum(v["commission"] for v in ozon_expense_map.values())
             _total_comm_gross = sum(v["commission_gross"] for v in ozon_expense_map.values())
             _total_acq_gross = sum(v["acquiring_gross"] for v in ozon_expense_map.values())
+            _total_acq = sum(v["acquiring"] for v in ozon_expense_map.values())
             _total_log = sum(v["logistics"] for v in ozon_expense_map.values())
             _total_items = sum(v["items"] for v in ozon_expense_map.values())
+            # Эквайринг: приоритет acq_gross (из SALE_OPS), fallback на acquiring
+            # (отдельная операция Ozon "Оплата эквайринга")
+            _acq_for_rate = _total_acq_gross if _total_acq_gross > 0 else _total_acq
             if _total_items > 0:
-                ozon_avg_commission_per_unit = _total_comm_gross / _total_items
+                ozon_avg_commission_per_unit = (_total_comm_gross + _acq_for_rate) / _total_items
                 ozon_avg_logistics_per_unit = _total_log / _total_items
             if _total_sale > 0:
                 # % = (брутто комиссия + эквайринг) / продажи × 100
-                ozon_avg_commission_pct = (_total_comm_gross + _total_acq_gross) / _total_sale * 100
+                ozon_avg_commission_pct = (_total_comm_gross + _acq_for_rate) / _total_sale * 100
 
         # Предвычисляем рекламные метрики по дням (по типам кампаний)
         ad_metrics_map = _build_ad_metrics_map(db, sku.id, channel.id, min(day_list), ref_date)
@@ -758,21 +763,15 @@ def get_rnp_pivot(
             # Комиссия и логистика на единицу
             if channel.type == ChannelType.OZON:
                 # Ozon: % = (брутто комиссия + эквайринг) / sale_amount × 100.
-                # Используем ТОЛЬКО продажи (без возвратов) — это и есть ставка договора Ozon.
+                # Для стабильности используем окно: дневной эквайринг идёт
+                # отдельной операцией Ozon, не привязан к конкретной продаже.
                 if commission_pct_override_val is not None:
                     commission_pct = commission_pct_override_val
+                elif ozon_avg_commission_pct > 0:
+                    # Скользящая ставка за окно: комиссия+эквайринг / продажи
+                    commission_pct = ozon_avg_commission_pct
                 else:
-                    _oz_day = ozon_expense_map.get(d, {})
-                    _day_sale = _oz_day.get("sale_amount", 0.0)
-                    _day_comm_gross = _oz_day.get("commission_gross", 0.0)
-                    _day_acq_gross = _oz_day.get("acquiring_gross", 0.0)
-                    if _day_sale > 0:
-                        commission_pct = (_day_comm_gross + _day_acq_gross) / _day_sale * 100
-                    elif ozon_avg_commission_pct > 0:
-                        # Нет данных за день → средняя за окно
-                        commission_pct = ozon_avg_commission_pct
-                    else:
-                        commission_pct = float(channel.commission_pct)
+                    commission_pct = float(channel.commission_pct)
                 commission_per_unit = round(p_before * commission_pct / 100, 2)
                 logistics_per_unit = ozon_avg_logistics_per_unit
             else:
