@@ -86,19 +86,19 @@ export default function StatementUploadModal({ open, onClose }: Props) {
   const confirmMutation = useMutation({
     mutationFn: async () => {
       if (!preview) return Promise.reject()
+      const accountName = preview.filename || 'Банковская выписка'
       const entries = preview.rows
         .filter((row) => !skippedRows.has(row.row_index))
         .map((row) => ({
           entry_type: row.entry_type || (row.amount >= 0 ? 'income' : 'expense'),
           amount: Math.abs(row.amount),
-          scheduled_date: row.date,
+          date: row.date,
           category: (editedCategories[row.row_index] ?? row.category) || 'other',
           counterparty: row.counterparty,
           description: row.description,
-          account_name: preview.filename || 'Банковская выписка',
-          is_recurring: false,
+          account_name: accountName,
         }))
-      return api.post('/journal/upload-confirm', { entries })
+      return api.post('/journal/upload-confirm', { entries, account_name: accountName })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['journal'] })

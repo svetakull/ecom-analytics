@@ -167,7 +167,16 @@ export function WeeklyTableHeader({ monthGroups, totalCol, expandedMonths, toggl
       <tr>
         {monthGroups.map((g) => {
           const isExpanded = expandedMonths.has(g.monthKey)
-          if (!isExpanded) return null
+          if (!isExpanded) {
+            // Плейсхолдер под свёрнутым месяцем, чтобы колонки недель
+            // в развёрнутых месяцах не сползали влево
+            return (
+              <th
+                key={`${g.monthKey}-ph`}
+                className="bg-gray-100 border-b border-gray-300 border-l border-l-gray-300"
+              />
+            )
+          }
           return [
             ...g.weekColumns.map((wc) => (
               <th

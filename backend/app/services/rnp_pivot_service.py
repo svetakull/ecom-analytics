@@ -909,6 +909,18 @@ def get_rnp_pivot(
         avg_daily_orders = total_orders_qty / days
         turnover_days = round(current_stock / avg_daily_orders, 1) if avg_daily_orders > 0 else 999
 
+        # Скрыть SKU без активности за период:
+        # не было остатков И не было заказов/продаж/возвратов
+        had_stock_in_period = current_stock > 0 or any(
+            (days_data[d.isoformat()]["stock_wb"] or 0) > 0
+            or (days_data[d.isoformat()]["in_way_to_client"] or 0) > 0
+            or (days_data[d.isoformat()]["in_way_from_client"] or 0) > 0
+            for d in day_list
+        )
+        had_activity = (total_orders_qty + total_sales_qty + total_returns_qty) > 0
+        if not had_stock_in_period and not had_activity:
+            continue
+
         sc_row = (
             db.query(SKUChannel.mp_article, SKUChannel.photo_url)
             .filter(SKUChannel.sku_id == sku.id, SKUChannel.channel_id == channel.id)

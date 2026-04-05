@@ -242,6 +242,37 @@ def _current_stock(db: Session, sku_id: int, channel_type: Optional["ChannelType
     return int(sq.scalar() or 0)
 
 
+def _had_stock_in_period(
+    db: Session,
+    sku_id: int,
+    channel_type: Optional["ChannelType"],
+    date_from: date,
+    date_to: date,
+) -> bool:
+    """Был ли ненулевой остаток SKU хотя бы на один день в периоде."""
+    from app.models.catalog import Warehouse
+    q = db.query(func.max(Stock.qty)).filter(
+        Stock.sku_id == sku_id,
+        Stock.date >= date_from,
+        Stock.date <= date_to,
+    )
+    if channel_type is not None:
+        prefix_map = {
+            ChannelType.WB: "WB",
+            ChannelType.OZON: "Ozon",
+            ChannelType.LAMODA: "Lamoda",
+        }
+        prefix = prefix_map.get(channel_type)
+        if prefix:
+            wh_ids = [
+                wh.id
+                for wh in db.query(Warehouse.id).filter(Warehouse.name.ilike(f"{prefix}%")).all()
+            ]
+            if wh_ids:
+                q = q.filter(Stock.warehouse_id.in_(wh_ids))
+    return int(q.scalar() or 0) > 0
+
+
 def _current_price(db: Session, sku_id: int, channel_id: int, ref_date: date) -> float:
     """Последняя известная цена продавца (до соинвеста) ≤ ref_date."""
     row = (
@@ -733,6 +764,13 @@ def get_otsifrovka(
         # ── Цена и % возвратов ────────────────────────
         avg_price = round(sales_rub / sales_qty, 2) if sales_qty > 0 else round(orders_rub / orders_qty, 2) if orders_qty > 0 else _current_price(db, sku.id, channel.id, ref_date)
         return_rate_pct = round(returns_qty / orders_qty * 100, 1) if orders_qty > 0 else 0.0
+
+        # Скрыть SKU без активности за период:
+        # не было остатков И не было заказов/продаж/возвратов
+        had_activity = (orders_qty + sales_qty + returns_qty) > 0
+        if not had_activity and current_stock == 0:
+            if not _had_stock_in_period(db, sku.id, channel.type, date_from, date_to):
+                continue
 
         # ── Фото ─────────────────────────────────────
         mp_article = sc.mp_article or ""
