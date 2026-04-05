@@ -208,6 +208,31 @@ def get_dds(
 
     empty_auto = {"ppvz_for_pay": 0.0, "ppvz_for_pay_wb": 0.0, "ppvz_for_pay_ozon": 0.0, "compensation_wb": 0.0}
 
+    # === Накопленный остаток: считаем running balance по периодам ===
+    # Baseline = последняя запись balance_start до начала периода (или на дату ≤ date_from)
+    baseline_row = (
+        db.query(DDSManualEntry.amount)
+        .filter(DDSManualEntry.category == "balance_start", DDSManualEntry.date <= date_from)
+        .order_by(DDSManualEntry.date.desc(), DDSManualEntry.id.desc())
+        .first()
+    )
+    baseline = float(baseline_row[0]) if baseline_row else 0.0
+
+    # Net flow per week
+    net_flow_per_week: dict[str, float] = {}
+    for p in all_periods:
+        a = auto_weekly.get(p, dict(empty_auto))
+        mn = manual_weekly.get(p, defaultdict(float))
+        net_flow_per_week[p] = _net_flow(a, mn)
+
+    # Running balance на начало каждой недели
+    running_balance_at_start: dict[str, float] = {}
+    rb = baseline
+    for p in all_periods:
+        running_balance_at_start[p] = rb
+        rb += net_flow_per_week[p]
+    final_balance = rb  # после последней недели
+
     prev_month = None
     for period in all_periods:
         try:
@@ -237,7 +262,10 @@ def get_dds(
                     pass
             # Балансы на последнюю неделю месяца
             month_last_balances = balance_weekly.get(last_wp, defaultdict(float)) if last_wp else defaultdict(float)
-            lines = _build_lines(month_auto, month_manual, month_last_balances, month_stock_rub, month_stock_qty, all_accounts)
+            # Накопленный остаток: начало = на начало первой недели месяца
+            first_wp = month_weeks.get(prev_month, [])[0] if month_weeks.get(prev_month) else None
+            month_ostatok_start = running_balance_at_start.get(first_wp, baseline) if first_wp else baseline
+            lines = _build_lines(month_auto, month_manual, month_last_balances, month_stock_rub, month_stock_qty, all_accounts, month_ostatok_start)
             month_names = {"01": "Январь", "02": "Февраль", "03": "Март", "04": "Апрель",
                           "05": "Май", "06": "Июнь", "07": "Июль", "08": "Август",
                           "09": "Сентябрь", "10": "Октябрь", "11": "Ноябрь", "12": "Декабрь"}
@@ -253,7 +281,7 @@ def get_dds(
         except Exception:
             week_end = date_to
         week_stock_rub, week_stock_qty = _stock_on_date(week_end)
-        lines = _build_lines(auto, manual, balances, week_stock_rub, week_stock_qty, all_accounts)
+        lines = _build_lines(auto, manual, balances, week_stock_rub, week_stock_qty, all_accounts, running_balance_at_start.get(period, baseline))
         periods_result.append({"period": period, "lines": lines})
         prev_month = cur_month
 
@@ -273,7 +301,9 @@ def get_dds(
         except Exception:
             month_stock_rub, month_stock_qty = stock_total_rub, stock_total_qty
         last_balances_final = balance_weekly.get(last_wp, defaultdict(float))
-        lines = _build_lines(month_auto, month_manual_last, last_balances_final, month_stock_rub, month_stock_qty, all_accounts)
+        first_wp_last = month_weeks[prev_month][0]
+        month_ostatok_start_last = running_balance_at_start.get(first_wp_last, baseline)
+        lines = _build_lines(month_auto, month_manual_last, last_balances_final, month_stock_rub, month_stock_qty, all_accounts, month_ostatok_start_last)
         month_names = {"01": "Январь", "02": "Февраль", "03": "Март", "04": "Апрель",
                       "05": "Май", "06": "Июнь", "07": "Июль", "08": "Август",
                       "09": "Сентябрь", "10": "Октябрь", "11": "Ноябрь", "12": "Декабрь"}
@@ -291,7 +321,7 @@ def get_dds(
         if all_periods:
             last_period = all_periods[-1]
             total_balances = balance_weekly.get(last_period, defaultdict(float))
-        total_lines = _build_lines(total_auto, total_manual_all, total_balances, stock_total_rub, stock_total_qty, all_accounts)
+        total_lines = _build_lines(total_auto, total_manual_all, total_balances, stock_total_rub, stock_total_qty, all_accounts, baseline)
     else:
         total_lines = []
 
@@ -304,7 +334,7 @@ def get_dds(
         key = line.get("key", "")
         if key.startswith("itogo_") or key.startswith("section_"):
             return True
-        if key.startswith("balance_acc_") or key in ("balance_computed", "balance_diff"):
+        if key.startswith("balance_acc_") or key.startswith("mp_balance_") or key in ("mp_transit", "balance_computed", "balance_diff"):
             return True  # строки раздела VII — всегда показываем для ручного ввода
         if key in ("ostatok_nachalo", "ostatok_konec", "chisty_potok"):
             return True
@@ -338,15 +368,47 @@ def _manual(manual: dict[str, float], category: str) -> float:
     return manual.get(category, 0.0)
 
 
-def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float], stock_rub: float = 0, stock_qty: int = 0, all_accounts: list[str] = None) -> list:
-    """Построить строки ДДС из авто + ручных данных."""
+def _net_flow(auto: dict, manual: dict[str, float]) -> float:
+    """Чистый денежный поток за период = поступления − расходы − налоги − авансы − кредиты − дивиденды."""
+    income_keys = ["income_wb", "income_ozon", "income_lamoda", "income_site",
+                   "income_opt", "income_pvz", "income_deposit", "mp_payment"]
+    income = sum(_manual(manual, k) for k in income_keys) + auto.get("compensation_wb", 0)
+
+    # Расходы
+    exp_keys = [
+        "content", "external_ads", "buyout_services", "buyout_goods",
+        "salary", "salary_manager", "salary_employee", "salary_smm", "salary_reels",
+        "outsource", "outsource_accountant", "outsource_it", "outsource_other",
+        "warehouse", "warehouse_kalmykia", "courier", "travel", "bank_fees",
+        "office", "equipment", "education", "subscriptions", "new_products", "pvz",
+        "delivery_rf",
+    ]
+    rashody = sum(_manual(manual, k) for k in exp_keys)
+
+    tax = sum(_manual(manual, k) for k in ("usn", "insurance", "ndfl"))
+    avansy = sum(_manual(manual, k) for k in ("purchase_china", "delivery_china", "ff", "ff_storage", "delivery_mp"))
+    kredity = sum(_manual(manual, k) for k in ("wb_deductions", "bank_credit", "credit_interest"))
+    dividendy = sum(_manual(manual, k) for k in ("dividend_investor", "dividend_manager", "dividend_other"))
+
+    return income - rashody - tax - avansy - kredity - dividendy
+
+
+def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float], stock_rub: float = 0, stock_qty: int = 0, all_accounts: list[str] = None, ostatok_nachalo_override: float = None) -> list:
+    """Построить строки ДДС из авто + ручных данных.
+
+    ostatok_nachalo_override: если задан, используется как 'Остаток на начало'
+    (для накопленного остатка), иначе берётся из manual['balance_start'].
+    """
     if all_accounts is None:
         all_accounts = sorted(balances.keys()) if balances else []
 
     # === ИНФОРМАЦИЯ ===
     purchase_rub = auto.get("purchase_rub", 0)
     purchase_qty = auto.get("purchase_qty", 0)
-    ostatok_nachalo = _manual(manual, "balance_start")
+    if ostatok_nachalo_override is not None:
+        ostatok_nachalo = ostatok_nachalo_override
+    else:
+        ostatok_nachalo = _manual(manual, "balance_start")
 
     # === I. ПОСТУПЛЕНИЯ ===
     # Доходы из журнала операций (выписки банка) — все категории income_*
@@ -446,12 +508,15 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
     total_rashody = itogo_rashody + itogo_nalogi + itogo_avansy + itogo_kredity + itogo_dividendy
     chisty_potok = itogo_postupleniya - total_rashody
 
-    ostatok_nachalo = _manual(manual, "balance_start")
+    # ostatok_nachalo уже установлен в начале функции (override или balance_start)
     ostatok_konec = ostatok_nachalo + chisty_potok
 
     # Балансы по счетам
     balance_accounts = all_accounts
-    sum_balance_accounts = sum(float(balances.get(acc, 0)) for acc in balance_accounts)
+    mp_balance_wb = _manual(manual, "mp_balance_wb")
+    mp_balance_ozon = _manual(manual, "mp_balance_ozon")
+    mp_transit = _manual(manual, "mp_transit")
+    sum_balance_accounts = sum(float(balances.get(acc, 0)) for acc in balance_accounts) + mp_balance_wb + mp_balance_ozon + mp_transit
     diff_balance = sum_balance_accounts - ostatok_konec
 
     lines = [
@@ -543,22 +608,26 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
     ]
 
     # VII. ОСТАТОК ДС НА СЧЕТАХ (факт) — после дивидендов
-    if balance_accounts:
-        lines.append({"key": "section_balances", "name": "VII. ОСТАТОК ДС НА СЧЕТАХ", "amount": round(sum_balance_accounts, 2), "level": 0, "bold": True, "editable": False, "section": "balances", "category": None})
-        for acc_name in balance_accounts:
-            safe_key = "balance_acc_" + acc_name.lower().replace(" ", "_").replace("-", "_").replace(".", "")
-            lines.append({
-                "key": safe_key,
-                "name": acc_name,
-                "amount": round(float(balances.get(acc_name, 0)), 2),
-                "level": 1,
-                "bold": False,
-                "editable": True,
-                "section": "balances",
-                "category": f"balance_acc:{acc_name}",
-            })
-        lines.append({"key": "itogo_balance_accounts", "name": "Итого на счетах (факт)", "amount": round(sum_balance_accounts, 2), "level": 0, "bold": True, "editable": False, "section": "balances", "category": None})
-        lines.append({"key": "balance_computed", "name": "Остаток на конец (учётный)", "amount": round(ostatok_konec, 2), "level": 1, "bold": False, "editable": False, "section": "balances", "category": None})
-        lines.append({"key": "balance_diff", "name": "Расхождение (факт − учётный)", "amount": round(diff_balance, 2), "level": 1, "bold": False, "editable": False, "section": "balances", "category": None})
+    lines.append({"key": "section_balances", "name": "VII. ОСТАТОК ДС НА СЧЕТАХ", "amount": round(sum_balance_accounts, 2), "level": 0, "bold": True, "editable": False, "section": "balances", "category": None})
+    # Балансы банковских счетов
+    for acc_name in balance_accounts:
+        safe_key = "balance_acc_" + acc_name.lower().replace(" ", "_").replace("-", "_").replace(".", "")
+        lines.append({
+            "key": safe_key,
+            "name": acc_name,
+            "amount": round(float(balances.get(acc_name, 0)), 2),
+            "level": 1,
+            "bold": False,
+            "editable": True,
+            "section": "balances",
+            "category": f"balance_acc:{acc_name}",
+        })
+    # Балансы маркетплейсов (деньги на аккаунтах МП, ещё не перечисленные)
+    lines.append({"key": "mp_balance_wb", "name": "Баланс WB", "amount": round(mp_balance_wb, 2), "level": 1, "bold": False, "editable": True, "section": "balances", "category": "mp_balance_wb"})
+    lines.append({"key": "mp_balance_ozon", "name": "Баланс Ozon", "amount": round(mp_balance_ozon, 2), "level": 1, "bold": False, "editable": True, "section": "balances", "category": "mp_balance_ozon"})
+    lines.append({"key": "mp_transit", "name": "Транзит (в пути)", "amount": round(mp_transit, 2), "level": 1, "bold": False, "editable": True, "section": "balances", "category": "mp_transit"})
+    lines.append({"key": "itogo_balance_accounts", "name": "Итого ДС (счета + МП + транзит)", "amount": round(sum_balance_accounts, 2), "level": 0, "bold": True, "editable": False, "section": "balances", "category": None})
+    lines.append({"key": "balance_computed", "name": "Остаток на конец (учётный)", "amount": round(ostatok_konec, 2), "level": 1, "bold": False, "editable": False, "section": "balances", "category": None})
+    lines.append({"key": "balance_diff", "name": "Расхождение (факт − учётный)", "amount": round(diff_balance, 2), "level": 1, "bold": False, "editable": False, "section": "balances", "category": None})
 
     return lines
