@@ -55,12 +55,12 @@ export default function ReceiptsUploadModal({ open, onClose }: Props) {
         row_index: i,
         filename: e.filename || '',
         date: e.date || '',
-        amount: e.amount || 0,
+        amount: Math.abs(e.amount || 0),
         counterparty: e.counterparty || '',
         description: e.description || '',
         category: e.auto_category || 'other',
         auto_classified: !!(e.auto_category && e.auto_category !== 'other'),
-        entry_type: e.entry_type || 'expense',
+        entry_type: 'expense', // чеки всегда расход
         bank: e.bank || 'unknown',
         error: e.error,
       }))
@@ -85,7 +85,7 @@ export default function ReceiptsUploadModal({ open, onClose }: Props) {
       const valid = rows.filter((row) => !skippedRows.has(row.row_index) && !row.error && row.amount > 0)
       const skippedNoAmount = rows.filter(r => !skippedRows.has(r.row_index) && !r.error && !(r.amount > 0)).length
       const entries = valid.map((row) => ({
-        entry_type: row.entry_type || 'expense',
+        entry_type: 'expense', // чеки всегда расход
         amount: Math.abs(row.amount),
         date: row.date || today,
         category: (editedCategories[row.row_index] ?? row.category) || 'other',
