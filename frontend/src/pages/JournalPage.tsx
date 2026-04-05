@@ -423,8 +423,15 @@ export default function JournalPage() {
                 ⟲ Сбросить колонки
               </button>
             </div>
-            <div className="overflow-x-auto overflow-y-visible">
-            <table className="text-sm" style={{ borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', width: columns.reduce((s, c) => s + c.width, 0), minWidth: '100%' }}>
+            <div
+              className="overflow-x-scroll"
+              style={{
+                maxWidth: '100%',
+                scrollbarWidth: 'auto',
+                scrollbarColor: '#9ca3af #f3f4f6',
+              }}
+            >
+            <table className="text-sm" style={{ borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed', width: columns.reduce((s, c) => s + c.width, 0) }}>
               <colgroup>
                 {columns.map(c => <col key={c.key} style={{ width: c.width }} />)}
               </colgroup>
