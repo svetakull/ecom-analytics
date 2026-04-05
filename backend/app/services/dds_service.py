@@ -294,9 +294,31 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
     ostatok_nachalo = _manual(manual, "balance_start")
 
     # === I. ПОСТУПЛЕНИЯ ===
-    postuplenie_na_schet = auto.get("ppvz_for_pay", 0)
-    postuplenie_wb = auto.get("ppvz_for_pay_wb", 0)
-    postuplenie_ozon = auto.get("ppvz_for_pay_ozon", 0)
+    # Доходы из журнала операций (выписки банка) — все категории income_*
+    income_wb = _manual(manual, "income_wb")
+    income_ozon = _manual(manual, "income_ozon")
+    income_lamoda = _manual(manual, "income_lamoda")
+    income_site = _manual(manual, "income_site")
+    income_opt = _manual(manual, "income_opt")
+    income_pvz = _manual(manual, "income_pvz")
+    income_deposit = _manual(manual, "income_deposit")
+    mp_payment = _manual(manual, "mp_payment")
+
+    # Поступление на счёт = сумма всех доходов из выписок
+    postuplenie_na_schet = (
+        income_wb + income_ozon + income_lamoda + income_site +
+        income_opt + income_pvz + income_deposit + mp_payment
+    )
+    # Детализация по источникам
+    postuplenie_wb = income_wb
+    postuplenie_ozon = income_ozon
+    postuplenie_lamoda = income_lamoda
+    postuplenie_site = income_site
+    postuplenie_opt = income_opt
+    postuplenie_pvz = income_pvz
+    postuplenie_deposit = income_deposit
+    postuplenie_mp_other = mp_payment
+
     kompensacii = auto.get("compensation_wb", 0)
     itogo_postupleniya = postuplenie_na_schet + kompensacii
 
@@ -387,6 +409,12 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
         {"key": "postuplenie_na_schet", "name": "Поступление на счёт", "amount": round(postuplenie_na_schet, 2), "level": 1, "bold": False, "editable": False, "section": "income", "category": None},
         {"key": "postuplenie_wb", "name": "в т.ч. ВБ", "amount": round(postuplenie_wb, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
         {"key": "postuplenie_ozon", "name": "в т.ч. Озон", "amount": round(postuplenie_ozon, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
+        {"key": "postuplenie_lamoda", "name": "в т.ч. Ламода", "amount": round(postuplenie_lamoda, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
+        {"key": "postuplenie_site", "name": "в т.ч. Сайт", "amount": round(postuplenie_site, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
+        {"key": "postuplenie_opt", "name": "в т.ч. Опт", "amount": round(postuplenie_opt, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
+        {"key": "postuplenie_pvz", "name": "в т.ч. ПВЗ", "amount": round(postuplenie_pvz, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
+        {"key": "postuplenie_deposit", "name": "в т.ч. Депозит", "amount": round(postuplenie_deposit, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
+        {"key": "postuplenie_mp_other", "name": "в т.ч. МП (прочее)", "amount": round(postuplenie_mp_other, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
         {"key": "kompensacii", "name": "Компенсации", "amount": round(kompensacii, 2), "level": 1, "bold": False, "editable": False, "section": "income", "category": None},
         {"key": "itogo_postupleniya", "name": "Итого поступления", "amount": round(itogo_postupleniya, 2), "level": 0, "bold": True, "editable": False, "section": "income", "category": None},
 

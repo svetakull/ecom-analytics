@@ -83,7 +83,13 @@ export default function OPiUPage() {
         {isLoading && <div className="flex items-center justify-center h-40 text-gray-400">Загрузка...</div>}
         {isError && <div className="flex items-center justify-center h-40 text-red-500">Ошибка загрузки</div>}
         {data && visibleColumns.length > 0 && (
-          <table className="w-auto text-sm" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
+          <table className="w-auto text-sm" style={{ borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}>
+            <colgroup>
+              <col style={{ width: 220 }} />
+              {visibleColumns.map((col: any) => (
+                <col key={col.period} style={{ width: col.period === 'total' ? 100 : 90 }} />
+              ))}
+            </colgroup>
             <WeeklyTableHeader
               monthGroups={monthGroups}
               totalCol={totalCol}
