@@ -222,11 +222,20 @@ def _sync_to_dds(db: Session, entry: JournalEntry):
     ref_name = f"journal_{entry.id}"
     description = entry.counterparty or entry.description or entry.category
 
+    # Знак суммы: если направление операции (income/expense) не совпадает с
+    # "натуральным" направлением категории — ставим минус.
+    # Пример: возврат таможенного платежа (entry_type=income, section=taxes) → -amount
+    amount_signed = float(entry.amount)
+    cat_natural_income = section == "income"
+    entry_is_income = entry.entry_type == "income"
+    if cat_natural_income != entry_is_income:
+        amount_signed = -amount_signed
+
     dds_entry = DDSManualEntry(
         date=entry.scheduled_date,  # реальная дата операции
         category=entry.category,
         name=ref_name,
-        amount=float(entry.amount),
+        amount=amount_signed,
         section=section,
         channel_id=entry.channel_id,
         created_by=entry.created_by,
