@@ -572,9 +572,10 @@ def get_rnp_pivot(
 
         # Ozon: предвычисляем расходы по дням из SkuDailyExpense
         ozon_expense_map: Dict[date, dict] = {}
-        # Средние значения комиссии/логистики Ozon за 30 дней (на единицу)
+        # Средние значения за весь период wide (обычно 14-37 дней)
         ozon_avg_commission_per_unit: float = 0.0
         ozon_avg_logistics_per_unit: float = 0.0
+        ozon_avg_commission_pct: float = 0.0  # % от sale_amount (фактический)
         if channel.type == ChannelType.OZON:
             for exp in db.query(SkuDailyExpense).filter(
                 SkuDailyExpense.sku_id == sku.id,
@@ -583,19 +584,23 @@ def get_rnp_pivot(
                 SkuDailyExpense.date <= ref_date,
             ).all():
                 ozon_expense_map[exp.date] = {
+                    "sale_amount": float(exp.sale_amount),
                     "commission": float(exp.commission),
                     "logistics": float(exp.logistics),
                     "storage": float(exp.storage),
                     "items": int(exp.items_count),
                 }
-            # 30-дневная средняя на единицу (Ozon начисляет комиссию асинхронно,
-            # поэтому дневные значения скачут от 0% до 15% — среднее за 30 дней стабильное)
+            # Усреднение за окно: Ozon начисляет комиссию асинхронно, дневные
+            # значения скачут, среднее за ≥14 дней — стабильная точка контроля.
+            _total_sale = sum(v["sale_amount"] for v in ozon_expense_map.values())
             _total_comm = sum(v["commission"] for v in ozon_expense_map.values())
             _total_log = sum(v["logistics"] for v in ozon_expense_map.values())
             _total_items = sum(v["items"] for v in ozon_expense_map.values())
             if _total_items > 0:
                 ozon_avg_commission_per_unit = _total_comm / _total_items
                 ozon_avg_logistics_per_unit = _total_log / _total_items
+            if _total_sale > 0:
+                ozon_avg_commission_pct = _total_comm / _total_sale * 100
 
         # Предвычисляем рекламные метрики по дням (по типам кампаний)
         ad_metrics_map = _build_ad_metrics_map(db, sku.id, channel.id, min(day_list), ref_date)
@@ -745,12 +750,27 @@ def get_rnp_pivot(
 
             # Комиссия и логистика на единицу
             if channel.type == ChannelType.OZON:
-                # Ozon: приоритет override → базовый процент канала → cash-flow API
+                # Ozon: комиссия = commission / (p_before × qty) × 100.
+                # p_before = цена ДО соинвеста (marketing_seller_price из Prices API).
+                # Это позволяет видеть реальную ставку комиссии Ozon.
                 if commission_pct_override_val is not None:
                     commission_pct = commission_pct_override_val
                 else:
-                    # Базовый % канала (брутто по договору Ozon) — основной источник
-                    commission_pct = float(channel.commission_pct)
+                    _oz_day = ozon_expense_map.get(d, {})
+                    _day_comm = _oz_day.get("commission", 0.0)
+                    _day_items = _oz_day.get("items", 0)
+                    if _day_items > 0 and p_before > 0:
+                        # Комиссия на единицу / цена до соинвеста
+                        _comm_per_unit = _day_comm / _day_items
+                        commission_pct = _comm_per_unit / p_before * 100
+                    elif _total_items > 0 and _total_sale > 0:
+                        # Нет данных за день — среднее за окно (стабильнее)
+                        # base: avg commission per unit / avg sale_amount per unit
+                        _avg_comm_unit = _total_comm / _total_items
+                        _avg_price_unit = _total_sale / _total_items
+                        commission_pct = (_avg_comm_unit / _avg_price_unit * 100) if _avg_price_unit > 0 else float(channel.commission_pct)
+                    else:
+                        commission_pct = float(channel.commission_pct)
                 commission_per_unit = round(p_before * commission_pct / 100, 2)
                 logistics_per_unit = ozon_avg_logistics_per_unit
             else:

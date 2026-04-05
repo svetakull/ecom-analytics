@@ -1328,6 +1328,10 @@ export default function RnPPage() {
       return true
     })
     .sort((a, b) => {
+      // Сначала сортировка по каналу: WB → Ozon → остальные
+      const channelOrder: Record<string, number> = { wb: 0, ozon: 1, lamoda: 2 }
+      const chDiff = (channelOrder[a.channel_type] ?? 9) - (channelOrder[b.channel_type] ?? 9)
+      if (chDiff !== 0) return chDiff
       if (sortBy === 'margin') return b.avg_margin_pct - a.avg_margin_pct
       if (sortBy === 'stock') return a.turnover_days - b.turnover_days
       return b.total_orders_qty - a.total_orders_qty
