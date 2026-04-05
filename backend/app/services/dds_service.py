@@ -384,7 +384,8 @@ def _net_flow(auto: dict, manual: dict[str, float]) -> float:
         "salary", "salary_manager", "salary_employee", "salary_smm", "salary_reels", "salary_pvz",
         "outsource", "outsource_accountant", "outsource_it", "outsource_other",
         "warehouse", "warehouse_kalmykia", "courier", "travel", "bank_fees",
-        "office", "equipment", "education", "subscriptions", "new_products", "pvz",
+        "office", "equipment", "education", "subscriptions", "new_products",
+        "pvz", "pvz_tko", "pvz_internet", "pvz_video",
         "delivery_rf", "rent_pvz", "other", "site_delivery",
     ]
     rashody = sum(_manual(manual, k) for k in exp_keys)
@@ -496,10 +497,13 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
     # Группа «Сайт»
     site_delivery = _manual(manual, "site_delivery")
     site_total = external_ads_site + site_delivery
-    # Группа «ПВЗ» = Расходы ПВЗ + Аренда ПВЗ + ФОТ ПВЗ
+    # Группа «ПВЗ» = ТБО + Интернет + Видеонаблюдение + Прочее + Аренда ПВЗ + ФОТ ПВЗ
     # (salary_pvz уже входит в fot, поэтому вычтем и перенесём сюда)
+    pvz_tko = _manual(manual, "pvz_tko")
+    pvz_internet = _manual(manual, "pvz_internet")
+    pvz_video = _manual(manual, "pvz_video")
     fot = fot - salary_pvz  # вынимаем ФОТ ПВЗ из общего ФОТ
-    pvz_total = pvz + rent_pvz + salary_pvz
+    pvz_total = pvz_tko + pvz_internet + pvz_video + pvz + rent_pvz + salary_pvz
 
     itogo_rashody = (
         content + external_ads + site_total + buyout_services + buyout_goods +
@@ -612,7 +616,10 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
         {"key": "new_products", "name": "Новинки", "amount": round(new_products, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "new_products"},
         # Направление: ПВЗ
         {"key": "pvz_group", "name": "ПВЗ", "amount": round(pvz_total, 2), "level": 1, "bold": False, "editable": False, "section": "expenses", "category": None},
-        {"key": "pvz", "name": "Расходы ПВЗ", "amount": round(pvz, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "pvz"},
+        {"key": "pvz_tko", "name": "ТБО", "amount": round(pvz_tko, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "pvz_tko"},
+        {"key": "pvz_internet", "name": "Интернет", "amount": round(pvz_internet, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "pvz_internet"},
+        {"key": "pvz_video", "name": "Видеонаблюдение", "amount": round(pvz_video, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "pvz_video"},
+        {"key": "pvz", "name": "Расходы ПВЗ (прочее)", "amount": round(pvz, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "pvz"},
         {"key": "rent_pvz", "name": "Аренда ПВЗ", "amount": round(rent_pvz, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "rent_pvz"},
         {"key": "salary_pvz", "name": "ФОТ ПВЗ", "amount": round(salary_pvz, 2), "level": 2, "bold": False, "editable": True, "section": "expenses", "category": "salary_pvz"},
         {"key": "delivery_rf", "name": "Доставка внутри РФ", "amount": round(delivery_rf, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "delivery_rf"},
