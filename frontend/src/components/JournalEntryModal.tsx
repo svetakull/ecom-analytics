@@ -95,11 +95,29 @@ export default function JournalEntryModal({ open, onClose, editEntry }: Props) {
   })
 
   // Fetch categories
-  const { data: categories = [] } = useQuery<{ key: string; name: string }[]>({
+  const { data: categories = [] } = useQuery<{ key: string; name: string; section?: string }[]>({
     queryKey: ['journal-categories'],
     queryFn: () => api.get('/journal/categories').then((r) => r.data),
     enabled: open,
   })
+
+  // Группировка по разделам для optgroup
+  const SECTION_LABELS: Record<string, string> = {
+    income: 'Доходы',
+    expenses: 'Расходы',
+    taxes: 'Налоги',
+    advances: 'Авансы (закупка)',
+    credits: 'Кредиты и удержания',
+    dividends: 'Дивиденды',
+  }
+  const SECTION_ORDER = ['income', 'expenses', 'taxes', 'advances', 'credits', 'dividends']
+  const groupedCategories = SECTION_ORDER
+    .map(section => ({
+      section,
+      label: SECTION_LABELS[section] || section,
+      items: categories.filter(c => c.section === section),
+    }))
+    .filter(g => g.items.length > 0)
 
   // Reset form when opening/closing or editing
   useEffect(() => {
@@ -398,10 +416,14 @@ export default function JournalEntryModal({ open, onClose, editEntry }: Props) {
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
             >
               <option value="">Выберите статью</option>
-              {categories.map((c) => (
-                <option key={c.key} value={c.key}>
-                  {c.name}
-                </option>
+              {groupedCategories.map((group) => (
+                <optgroup key={group.section} label={group.label}>
+                  {group.items.map((c) => (
+                    <option key={c.key} value={c.key}>
+                      {c.name}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </div>
