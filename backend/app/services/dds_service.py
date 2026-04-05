@@ -272,11 +272,39 @@ def get_dds(
     else:
         total_lines = []
 
+    # Скрываем строки без оборотов за весь период: keep, если хотя бы
+    # в одном периоде или total значение != 0. Структурные строки
+    # (level=0 — секции и итоги) оставляем всегда.
+    def _is_structural(line: dict) -> bool:
+        if line.get("level") == 0:
+            return True
+        key = line.get("key", "")
+        if key.startswith("itogo_") or key.startswith("section_"):
+            return True
+        if key in ("ostatok_nachalo", "ostatok_konec", "chisty_potok"):
+            return True
+        return False
+
+    keys_with_data: set[str] = set()
+    for p in periods_result:
+        for ln in p.get("lines", []):
+            if abs(ln.get("amount", 0)) > 0.005:
+                keys_with_data.add(ln["key"])
+    for ln in total_lines:
+        if abs(ln.get("amount", 0)) > 0.005:
+            keys_with_data.add(ln["key"])
+
+    def _filter_lines(lines: list) -> list:
+        return [ln for ln in lines if _is_structural(ln) or ln["key"] in keys_with_data]
+
+    filtered_periods = [{**p, "lines": _filter_lines(p.get("lines", []))} for p in periods_result]
+    filtered_total = _filter_lines(total_lines)
+
     return {
         "date_from": date_from.isoformat(),
         "date_to": date_to.isoformat(),
-        "periods": periods_result,
-        "total": {"period": "total", "lines": total_lines},
+        "periods": filtered_periods,
+        "total": {"period": "total", "lines": filtered_total},
     }
 
 
@@ -407,14 +435,14 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
         # I. ПОСТУПЛЕНИЯ
         {"key": "section_income", "name": "I. ПОСТУПЛЕНИЯ", "amount": 0, "level": 0, "bold": True, "editable": False, "section": "income", "category": None},
         {"key": "postuplenie_na_schet", "name": "Поступление на счёт", "amount": round(postuplenie_na_schet, 2), "level": 1, "bold": False, "editable": False, "section": "income", "category": None},
-        {"key": "postuplenie_wb", "name": "в т.ч. ВБ", "amount": round(postuplenie_wb, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
-        {"key": "postuplenie_ozon", "name": "в т.ч. Озон", "amount": round(postuplenie_ozon, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
-        {"key": "postuplenie_lamoda", "name": "в т.ч. Ламода", "amount": round(postuplenie_lamoda, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
-        {"key": "postuplenie_site", "name": "в т.ч. Сайт", "amount": round(postuplenie_site, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
-        {"key": "postuplenie_opt", "name": "в т.ч. Опт", "amount": round(postuplenie_opt, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
-        {"key": "postuplenie_pvz", "name": "в т.ч. ПВЗ", "amount": round(postuplenie_pvz, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
-        {"key": "postuplenie_deposit", "name": "в т.ч. Депозит", "amount": round(postuplenie_deposit, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
-        {"key": "postuplenie_mp_other", "name": "в т.ч. МП (прочее)", "amount": round(postuplenie_mp_other, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
+        {"key": "postuplenie_wb", "name": "ВБ", "amount": round(postuplenie_wb, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
+        {"key": "postuplenie_ozon", "name": "Озон", "amount": round(postuplenie_ozon, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
+        {"key": "postuplenie_lamoda", "name": "Ламода", "amount": round(postuplenie_lamoda, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
+        {"key": "postuplenie_site", "name": "Сайт", "amount": round(postuplenie_site, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
+        {"key": "postuplenie_opt", "name": "Опт", "amount": round(postuplenie_opt, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
+        {"key": "postuplenie_pvz", "name": "ПВЗ", "amount": round(postuplenie_pvz, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
+        {"key": "postuplenie_deposit", "name": "Депозит", "amount": round(postuplenie_deposit, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
+        {"key": "postuplenie_mp_other", "name": "МП (прочее)", "amount": round(postuplenie_mp_other, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
         {"key": "kompensacii", "name": "Компенсации", "amount": round(kompensacii, 2), "level": 1, "bold": False, "editable": False, "section": "income", "category": None},
         {"key": "itogo_postupleniya", "name": "Итого поступления", "amount": round(itogo_postupleniya, 2), "level": 0, "bold": True, "editable": False, "section": "income", "category": None},
 
