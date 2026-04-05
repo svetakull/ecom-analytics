@@ -371,7 +371,8 @@ def _manual(manual: dict[str, float], category: str) -> float:
 def _net_flow(auto: dict, manual: dict[str, float]) -> float:
     """Чистый денежный поток за период = поступления − расходы − налоги − авансы − кредиты − дивиденды."""
     income_keys = ["income_wb", "income_ozon", "income_lamoda", "income_site",
-                   "income_opt", "income_pvz", "income_deposit", "mp_payment"]
+                   "income_opt", "income_pvz", "income_deposit", "mp_payment",
+                   "investor_contribution", "credit_received"]
     income = sum(_manual(manual, k) for k in income_keys) + auto.get("compensation_wb", 0)
 
     # Расходы
@@ -420,11 +421,14 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
     income_pvz = _manual(manual, "income_pvz")
     income_deposit = _manual(manual, "income_deposit")
     mp_payment = _manual(manual, "mp_payment")
+    investor_contribution = _manual(manual, "investor_contribution")
+    credit_received = _manual(manual, "credit_received")
 
     # Поступление на счёт = сумма всех доходов из выписок
     postuplenie_na_schet = (
         income_wb + income_ozon + income_lamoda + income_site +
-        income_opt + income_pvz + income_deposit + mp_payment
+        income_opt + income_pvz + income_deposit + mp_payment +
+        investor_contribution + credit_received
     )
     # Детализация по источникам
     postuplenie_wb = income_wb
@@ -435,6 +439,8 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
     postuplenie_pvz = income_pvz
     postuplenie_deposit = income_deposit
     postuplenie_mp_other = mp_payment
+    postuplenie_investor = investor_contribution
+    postuplenie_credit = credit_received
 
     kompensacii = auto.get("compensation_wb", 0)
     itogo_postupleniya = postuplenie_na_schet + kompensacii
@@ -537,6 +543,9 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
         {"key": "postuplenie_pvz", "name": "ПВЗ", "amount": round(postuplenie_pvz, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
         {"key": "postuplenie_deposit", "name": "Депозит", "amount": round(postuplenie_deposit, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
         {"key": "postuplenie_mp_other", "name": "МП (прочее)", "amount": round(postuplenie_mp_other, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
+        {"key": "vlozheniya", "name": "Вложения", "amount": round(investor_contribution + credit_received, 2), "level": 1, "bold": True, "editable": False, "section": "income", "category": None},
+        {"key": "investor_contribution", "name": "Вложения инвестора", "amount": round(investor_contribution, 2), "level": 2, "bold": False, "editable": True, "section": "income", "category": "investor_contribution"},
+        {"key": "credit_received", "name": "Поступления кредитных средств", "amount": round(credit_received, 2), "level": 2, "bold": False, "editable": True, "section": "income", "category": "credit_received"},
         {"key": "kompensacii", "name": "Компенсации", "amount": round(kompensacii, 2), "level": 1, "bold": False, "editable": False, "section": "income", "category": None},
         {"key": "itogo_postupleniya", "name": "Итого поступления", "amount": round(itogo_postupleniya, 2), "level": 0, "bold": True, "editable": False, "section": "income", "category": None},
 
