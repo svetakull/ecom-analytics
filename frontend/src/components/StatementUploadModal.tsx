@@ -255,14 +255,6 @@ export default function StatementUploadModal({ open, onClose }: Props) {
           {preview && (
             <div className="space-y-4">
               <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div className="text-sm text-gray-600">
-                  Найдено строк: <span className="font-medium">{preview.total_rows}</span>
-                  {' | '}
-                  Авто-распознано:{' '}
-                  <span className="font-medium text-emerald-600">
-                    {preview.auto_classified_count}
-                  </span>
-                </div>
                 <div className="flex items-center gap-2">
                   <label className="text-sm text-gray-600">Банк:</label>
                   {!addingBank ? (
@@ -341,6 +333,14 @@ export default function StatementUploadModal({ open, onClose }: Props) {
                       </button>
                     </>
                   )}
+                </div>
+                <div className="text-sm text-gray-600">
+                  Найдено строк: <span className="font-medium">{preview.total_rows}</span>
+                  {' | '}
+                  Авто-распознано:{' '}
+                  <span className="font-medium text-emerald-600">
+                    {preview.auto_classified_count}
+                  </span>
                 </div>
               </div>
 
