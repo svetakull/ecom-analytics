@@ -164,6 +164,18 @@ def get_dds(
         period = row.week.strftime("%Y-%m-%d") if row.week else "unknown"
         balance_weekly[period][row.account_name] = float(row.amount or 0)
 
+    # --- Список всех счетов: из журнала операций + из балансов ---
+    from app.models.finance import JournalEntry
+    account_names_rows = db.query(JournalEntry.account_name).filter(
+        JournalEntry.account_name.isnot(None),
+        JournalEntry.account_name != "",
+    ).distinct().all()
+    all_accounts_set = {r[0] for r in account_names_rows if r[0]}
+    for p_balances in balance_weekly.values():
+        for acc in p_balances.keys():
+            all_accounts_set.add(acc)
+    all_accounts = sorted(all_accounts_set)
+
     # Собираем все периоды
     all_periods = sorted(set(
         list(auto_weekly.keys()) +
@@ -215,7 +227,9 @@ def get_dds(
                     month_stock_rub, month_stock_qty = _stock_on_date(month_end)
                 except Exception:
                     pass
-            lines = _build_lines(month_auto, month_manual, defaultdict(float), month_stock_rub, month_stock_qty)
+            # Балансы на последнюю неделю месяца
+            month_last_balances = balance_weekly.get(last_wp, defaultdict(float)) if last_wp else defaultdict(float)
+            lines = _build_lines(month_auto, month_manual, month_last_balances, month_stock_rub, month_stock_qty, all_accounts)
             month_names = {"01": "Январь", "02": "Февраль", "03": "Март", "04": "Апрель",
                           "05": "Май", "06": "Июнь", "07": "Июль", "08": "Август",
                           "09": "Сентябрь", "10": "Октябрь", "11": "Ноябрь", "12": "Декабрь"}
@@ -231,7 +245,7 @@ def get_dds(
         except Exception:
             week_end = date_to
         week_stock_rub, week_stock_qty = _stock_on_date(week_end)
-        lines = _build_lines(auto, manual, balances, week_stock_rub, week_stock_qty)
+        lines = _build_lines(auto, manual, balances, week_stock_rub, week_stock_qty, all_accounts)
         periods_result.append({"period": period, "lines": lines})
         prev_month = cur_month
 
@@ -250,7 +264,8 @@ def get_dds(
             month_stock_rub, month_stock_qty = _stock_on_date(month_end)
         except Exception:
             month_stock_rub, month_stock_qty = stock_total_rub, stock_total_qty
-        lines = _build_lines(month_auto, month_manual_last, defaultdict(float), month_stock_rub, month_stock_qty)
+        last_balances_final = balance_weekly.get(last_wp, defaultdict(float))
+        lines = _build_lines(month_auto, month_manual_last, last_balances_final, month_stock_rub, month_stock_qty, all_accounts)
         month_names = {"01": "Январь", "02": "Февраль", "03": "Март", "04": "Апрель",
                       "05": "Май", "06": "Июнь", "07": "Июль", "08": "Август",
                       "09": "Сентябрь", "10": "Октябрь", "11": "Ноябрь", "12": "Декабрь"}
@@ -268,7 +283,7 @@ def get_dds(
         if all_periods:
             last_period = all_periods[-1]
             total_balances = balance_weekly.get(last_period, defaultdict(float))
-        total_lines = _build_lines(total_auto, total_manual_all, total_balances, stock_total_rub, stock_total_qty)
+        total_lines = _build_lines(total_auto, total_manual_all, total_balances, stock_total_rub, stock_total_qty, all_accounts)
     else:
         total_lines = []
 
@@ -313,8 +328,10 @@ def _manual(manual: dict[str, float], category: str) -> float:
     return manual.get(category, 0.0)
 
 
-def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float], stock_rub: float = 0, stock_qty: int = 0) -> list:
+def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float], stock_rub: float = 0, stock_qty: int = 0, all_accounts: list[str] = None) -> list:
     """Построить строки ДДС из авто + ручных данных."""
+    if all_accounts is None:
+        all_accounts = sorted(balances.keys()) if balances else []
 
     # === ИНФОРМАЦИЯ ===
     purchase_rub = auto.get("purchase_rub", 0)
@@ -423,7 +440,9 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
     ostatok_konec = ostatok_nachalo + chisty_potok
 
     # Балансы по счетам
-    balance_accounts = sorted(balances.keys()) if balances else []
+    balance_accounts = all_accounts
+    sum_balance_accounts = sum(float(balances.get(acc, 0)) for acc in balance_accounts)
+    diff_balance = sum_balance_accounts - ostatok_konec
 
     lines = [
         # ИНФОРМАЦИЯ
@@ -433,7 +452,7 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
         {"key": "ostatok_nachalo", "name": "Остаток ДС на начало периода", "amount": round(ostatok_nachalo, 2), "level": 0, "bold": True, "editable": True, "section": "info", "category": "balance_start"},
 
         # I. ПОСТУПЛЕНИЯ
-        {"key": "section_income", "name": "I. ПОСТУПЛЕНИЯ", "amount": 0, "level": 0, "bold": True, "editable": False, "section": "income", "category": None},
+        {"key": "section_income", "name": "I. ПОСТУПЛЕНИЯ", "amount": round(itogo_postupleniya, 2), "level": 0, "bold": True, "editable": False, "section": "income", "category": None},
         {"key": "postuplenie_na_schet", "name": "Поступление на счёт", "amount": round(postuplenie_na_schet, 2), "level": 1, "bold": False, "editable": False, "section": "income", "category": None},
         {"key": "postuplenie_wb", "name": "ВБ", "amount": round(postuplenie_wb, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
         {"key": "postuplenie_ozon", "name": "Озон", "amount": round(postuplenie_ozon, 2), "level": 2, "bold": False, "editable": False, "section": "income", "category": None},
@@ -447,7 +466,7 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
         {"key": "itogo_postupleniya", "name": "Итого поступления", "amount": round(itogo_postupleniya, 2), "level": 0, "bold": True, "editable": False, "section": "income", "category": None},
 
         # II. РАСХОДЫ
-        {"key": "section_expenses", "name": "II. РАСХОДЫ — ФАКТ СПИСАНИЯ", "amount": 0, "level": 0, "bold": True, "editable": False, "section": "expenses", "category": None},
+        {"key": "section_expenses", "name": "II. РАСХОДЫ — ФАКТ СПИСАНИЯ", "amount": round(itogo_rashody, 2), "level": 0, "bold": True, "editable": False, "section": "expenses", "category": None},
         {"key": "content", "name": "Контент", "amount": round(content, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "content"},
         {"key": "external_ads", "name": "Продвижение внешнее", "amount": round(external_ads, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "external_ads"},
         {"key": "buyout_services", "name": "Выкупы-услуги", "amount": round(buyout_services, 2), "level": 1, "bold": False, "editable": True, "section": "expenses", "category": "buyout_services"},
@@ -477,14 +496,14 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
         {"key": "itogo_rashody", "name": "Итого расходы", "amount": round(itogo_rashody, 2), "level": 0, "bold": True, "editable": False, "section": "expenses", "category": None},
 
         # III. НАЛОГИ
-        {"key": "section_taxes", "name": "III. НАЛОГИ", "amount": 0, "level": 0, "bold": True, "editable": False, "section": "taxes", "category": None},
+        {"key": "section_taxes", "name": "III. НАЛОГИ", "amount": round(itogo_nalogi, 2), "level": 0, "bold": True, "editable": False, "section": "taxes", "category": None},
         {"key": "usn", "name": "УСН и взнос 1%", "amount": round(usn, 2), "level": 1, "bold": False, "editable": True, "section": "taxes", "category": "usn"},
         {"key": "insurance", "name": "Страховые взносы", "amount": round(insurance, 2), "level": 1, "bold": False, "editable": True, "section": "taxes", "category": "insurance"},
         {"key": "ndfl", "name": "НДФЛ", "amount": round(ndfl, 2), "level": 1, "bold": False, "editable": True, "section": "taxes", "category": "ndfl"},
         {"key": "itogo_nalogi", "name": "Итого налоги", "amount": round(itogo_nalogi, 2), "level": 0, "bold": True, "editable": False, "section": "taxes", "category": None},
 
         # IV. АВАНСЫ (ЗАКУПКА)
-        {"key": "section_advances", "name": "IV. АВАНСЫ (ЗАКУПКА)", "amount": 0, "level": 0, "bold": True, "editable": False, "section": "advances", "category": None},
+        {"key": "section_advances", "name": "IV. АВАНСЫ (ЗАКУПКА)", "amount": round(itogo_avansy, 2), "level": 0, "bold": True, "editable": False, "section": "advances", "category": None},
         {"key": "purchase_china", "name": "Закупка Китай", "amount": round(purchase_china, 2), "level": 1, "bold": False, "editable": True, "section": "advances", "category": "purchase_china"},
         {"key": "delivery_china", "name": "Доставка Китай", "amount": round(delivery_china, 2), "level": 1, "bold": False, "editable": True, "section": "advances", "category": "delivery_china"},
         {"key": "ff", "name": "ФФ", "amount": round(ff, 2), "level": 1, "bold": False, "editable": True, "section": "advances", "category": "ff"},
@@ -493,14 +512,14 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
         {"key": "itogo_avansy", "name": "Итого авансы", "amount": round(itogo_avansy, 2), "level": 0, "bold": True, "editable": False, "section": "advances", "category": None},
 
         # V. КРЕДИТЫ И УДЕРЖАНИЯ
-        {"key": "section_credits", "name": "V. КРЕДИТЫ И УДЕРЖАНИЯ", "amount": 0, "level": 0, "bold": True, "editable": False, "section": "credits", "category": None},
+        {"key": "section_credits", "name": "V. КРЕДИТЫ И УДЕРЖАНИЯ", "amount": round(itogo_kredity, 2), "level": 0, "bold": True, "editable": False, "section": "credits", "category": None},
         {"key": "wb_deductions", "name": "Удержания ВБ", "amount": round(wb_deductions, 2), "level": 1, "bold": False, "editable": True, "section": "credits", "category": "wb_deductions"},
         {"key": "bank_credit", "name": "Банковские кредиты", "amount": round(bank_credit, 2), "level": 1, "bold": False, "editable": True, "section": "credits", "category": "bank_credit"},
         {"key": "credit_interest", "name": "% по кредитам", "amount": round(credit_interest, 2), "level": 1, "bold": False, "editable": True, "section": "credits", "category": "credit_interest"},
         {"key": "itogo_kredity", "name": "Итого кредиты", "amount": round(itogo_kredity, 2), "level": 0, "bold": True, "editable": False, "section": "credits", "category": None},
 
         # VI. ДИВИДЕНДЫ
-        {"key": "section_dividends", "name": "VI. ДИВИДЕНДЫ", "amount": 0, "level": 0, "bold": True, "editable": False, "section": "dividends", "category": None},
+        {"key": "section_dividends", "name": "VI. ДИВИДЕНДЫ", "amount": round(itogo_dividendy, 2), "level": 0, "bold": True, "editable": False, "section": "dividends", "category": None},
         {"key": "dividend_investor", "name": "Инвестор", "amount": round(dividend_investor, 2), "level": 1, "bold": False, "editable": True, "section": "dividends", "category": "dividend_investor"},
         {"key": "dividend_manager", "name": "Управляющий", "amount": round(dividend_manager, 2), "level": 1, "bold": False, "editable": True, "section": "dividends", "category": "dividend_manager"},
         {"key": "dividend_other", "name": "Прочее", "amount": round(dividend_other, 2), "level": 1, "bold": False, "editable": True, "section": "dividends", "category": "dividend_other"},
@@ -513,20 +532,23 @@ def _build_lines(auto: dict, manual: dict[str, float], balances: dict[str, float
         {"key": "ostatok_konec", "name": "Остаток на конец", "amount": round(ostatok_konec, 2), "level": 1, "bold": True, "editable": False, "section": "total", "category": None},
     ]
 
-    # Балансы по счетам
+    # VII. ОСТАТОК ДС НА СЧЕТАХ (факт) — после дивидендов
     if balance_accounts:
-        lines.append({"key": "section_balances", "name": "Баланс по счетам", "amount": 0, "level": 0, "bold": True, "editable": False, "section": "balances", "category": None})
+        lines.append({"key": "section_balances", "name": "VII. ОСТАТОК ДС НА СЧЕТАХ", "amount": round(sum_balance_accounts, 2), "level": 0, "bold": True, "editable": False, "section": "balances", "category": None})
         for acc_name in balance_accounts:
-            safe_key = "balance_" + acc_name.lower().replace(" ", "_").replace("-", "_")
+            safe_key = "balance_acc_" + acc_name.lower().replace(" ", "_").replace("-", "_").replace(".", "")
             lines.append({
                 "key": safe_key,
                 "name": acc_name,
-                "amount": round(balances[acc_name], 2),
+                "amount": round(float(balances.get(acc_name, 0)), 2),
                 "level": 1,
                 "bold": False,
                 "editable": True,
                 "section": "balances",
-                "category": f"balance:{acc_name}",
+                "category": f"balance_acc:{acc_name}",
             })
+        lines.append({"key": "itogo_balance_accounts", "name": "Итого на счетах (факт)", "amount": round(sum_balance_accounts, 2), "level": 0, "bold": True, "editable": False, "section": "balances", "category": None})
+        lines.append({"key": "balance_computed", "name": "Остаток на конец (учётный)", "amount": round(ostatok_konec, 2), "level": 1, "bold": False, "editable": False, "section": "balances", "category": None})
+        lines.append({"key": "balance_diff", "name": "Расхождение (факт − учётный)", "amount": round(diff_balance, 2), "level": 1, "bold": False, "editable": False, "section": "balances", "category": None})
 
     return lines
