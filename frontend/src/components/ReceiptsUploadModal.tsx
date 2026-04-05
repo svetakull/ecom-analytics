@@ -289,7 +289,18 @@ export default function ReceiptsUploadModal({ open, onClose }: Props) {
                             )}
                           </td>
                           <td className="px-3 py-2 text-gray-700 whitespace-nowrap">
-                            {row.date || '—'}
+                            <input
+                              type="date"
+                              value={row.date || ''}
+                              disabled={hasError}
+                              onChange={(e) => {
+                                const newDate = e.target.value
+                                setRows(prev => prev
+                                  ? prev.map(r => r.row_index === row.row_index ? { ...r, date: newDate } : r)
+                                  : prev)
+                              }}
+                              className="border border-gray-200 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50 disabled:bg-gray-50"
+                            />
                           </td>
                           <td
                             className={clsx(
@@ -297,11 +308,23 @@ export default function ReceiptsUploadModal({ open, onClose }: Props) {
                               row.entry_type === 'expense' ? 'text-red-600' : 'text-emerald-600'
                             )}
                           >
-                            {row.amount > 0
-                              ? `${row.entry_type === 'expense' ? '−' : '+'}${fmt(
-                                  Math.abs(row.amount)
-                                )} ₽`
-                              : '—'}
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={row.amount || ''}
+                              disabled={hasError}
+                              onChange={(e) => {
+                                const v = parseFloat(e.target.value) || 0
+                                setRows(prev => prev
+                                  ? prev.map(r => r.row_index === row.row_index ? { ...r, amount: v } : r)
+                                  : prev)
+                              }}
+                              className={clsx(
+                                'w-24 border border-gray-200 rounded px-1.5 py-0.5 text-xs text-right focus:outline-none focus:ring-2 focus:ring-blue-500/30 disabled:opacity-50 disabled:bg-gray-50',
+                                row.entry_type === 'expense' ? 'text-red-600' : 'text-emerald-600',
+                              )}
+                              placeholder="0"
+                            />
                           </td>
                           <td
                             className="px-3 py-2 text-gray-700 max-w-[180px]"
