@@ -1,7 +1,7 @@
 /**
  * Кредиты — учёт тела, процентов, платежей и остатка.
  */
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import { Plus, Pencil, Trash2, ChevronRight, ChevronDown } from 'lucide-react'
@@ -208,53 +208,102 @@ interface PeriodRow {
 }
 
 function PeriodSummary() {
-  const [granularity, setGranularity] = useState<'year' | 'month' | 'week'>('month')
   const [showDetails, setShowDetails] = useState(false)
-  const { data: rows = [], isLoading } = useQuery<PeriodRow[]>({
-    queryKey: ['credits-summary', granularity],
-    queryFn: () => api.get('/credits/summary-by-period', { params: { period: granularity } }).then(r => r.data),
+  const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set())
+  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set())
+
+  const { data: months = [], isLoading } = useQuery<PeriodRow[]>({
+    queryKey: ['credits-summary-month'],
+    queryFn: () => api.get('/credits/summary-by-period', { params: { period: 'month' } }).then(r => r.data),
   })
 
-  const fmtPeriod = (p: string) => {
-    const d = new Date(p + 'T00:00:00')
-    if (granularity === 'year') {
-      return String(d.getFullYear())
+  // Группируем месяцы по годам (год = первые 4 символа периода)
+  type MonthRow = PeriodRow
+  const byYear = useMemo(() => {
+    const m: Record<string, MonthRow[]> = {}
+    for (const row of months) {
+      const year = row.period.slice(0, 4)
+      if (!m[year]) m[year] = []
+      m[year].push(row)
     }
-    if (granularity === 'month') {
-      return d.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })
-    }
-    const end = new Date(d); end.setDate(end.getDate() + 6)
-    const f = (dt: Date) => `${dt.getDate().toString().padStart(2,'0')}.${(dt.getMonth()+1).toString().padStart(2,'0')}`
-    return `${f(d)}–${f(end)}`
+    return m
+  }, [months])
+
+  const yearKeys = Object.keys(byYear).sort()
+
+  const toggleYear = (y: string) => {
+    setExpandedYears(prev => {
+      const next = new Set(prev)
+      if (next.has(y)) next.delete(y)
+      else next.add(y)
+      return next
+    })
   }
 
-  const grandBody = rows.reduce((s, r) => s + r.sum_body, 0)
-  const grandInterest = rows.reduce((s, r) => s + r.sum_interest, 0)
-  const grandTotal = rows.reduce((s, r) => s + r.sum_total, 0)
+  const toggleMonth = (m: string) => {
+    setExpandedMonths(prev => {
+      const next = new Set(prev)
+      if (next.has(m)) next.delete(m)
+      else next.add(m)
+      return next
+    })
+  }
+
+  const sumYear = (rows: MonthRow[]) => ({
+    body: rows.reduce((s, r) => s + r.sum_body, 0),
+    interest: rows.reduce((s, r) => s + r.sum_interest, 0),
+    total: rows.reduce((s, r) => s + r.sum_total, 0),
+    count: rows.reduce((s, r) => s + r.credits.reduce((x, c) => x + c.count, 0), 0),
+  })
+
+  // Остаток = сумма платежей ПОСЛЕ этого периода (включая плановые)
+  // Для каждого месяца: balance_body = сумма body за все месяцы > этого
+  // balance_total = сумма total за все месяцы > этого (тело + проценты)
+  const balanceAfter = useMemo(() => {
+    const sortedPeriods = [...months].sort((a, b) => a.period.localeCompare(b.period))
+    const bodyAfter: Record<string, number> = {}
+    const totalAfter: Record<string, number> = {}
+    let runBody = sortedPeriods.reduce((s, r) => s + r.sum_body, 0)
+    let runTotal = sortedPeriods.reduce((s, r) => s + r.sum_total, 0)
+    for (const r of sortedPeriods) {
+      runBody -= r.sum_body
+      runTotal -= r.sum_total
+      bodyAfter[r.period] = runBody
+      totalAfter[r.period] = runTotal
+    }
+    return { bodyAfter, totalAfter }
+  }, [months])
+
+  // Для года остаток = остаток после последнего месяца этого года
+  const yearBalance = (yearRows: MonthRow[]) => {
+    const lastMonth = yearRows[yearRows.length - 1]?.period
+    return {
+      body: lastMonth ? (balanceAfter.bodyAfter[lastMonth] ?? 0) : 0,
+      total: lastMonth ? (balanceAfter.totalAfter[lastMonth] ?? 0) : 0,
+    }
+  }
+
+  const grandBody = months.reduce((s, r) => s + r.sum_body, 0)
+  const grandInterest = months.reduce((s, r) => s + r.sum_interest, 0)
+  const grandTotal = months.reduce((s, r) => s + r.sum_total, 0)
+
+  const fmtMonth = (p: string) => {
+    const d = new Date(p + 'T00:00:00')
+    return d.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })
+  }
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">
         <div className="text-sm font-semibold text-gray-800">Сводная по периодам</div>
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-1 text-xs text-gray-600">
-            <input type="checkbox" checked={showDetails} onChange={(e) => setShowDetails(e.target.checked)} />
-            Показать по кредитам
-          </label>
-          <select
-            value={granularity}
-            onChange={(e) => setGranularity(e.target.value as 'year' | 'month' | 'week')}
-            className="border border-gray-200 rounded px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-          >
-            <option value="year">По годам</option>
-            <option value="month">По месяцам</option>
-            <option value="week">По неделям</option>
-          </select>
-        </div>
+        <label className="flex items-center gap-1 text-xs text-gray-600">
+          <input type="checkbox" checked={showDetails} onChange={(e) => setShowDetails(e.target.checked)} />
+          Показать по кредитам
+        </label>
       </div>
       {isLoading ? (
         <div className="px-4 py-6 text-sm text-gray-400">Загрузка...</div>
-      ) : rows.length === 0 ? (
+      ) : yearKeys.length === 0 ? (
         <div className="px-4 py-6 text-sm text-gray-400 text-center">Нет платежей</div>
       ) : (
         <table className="text-sm" style={{ width: 'auto' }}>
@@ -264,39 +313,80 @@ function PeriodSummary() {
               <th className="text-right px-3 py-2 font-medium text-xs whitespace-nowrap">Тело</th>
               <th className="text-right px-3 py-2 font-medium text-xs whitespace-nowrap">Проценты</th>
               <th className="text-right px-3 py-2 font-medium text-xs whitespace-nowrap">Платёж итого</th>
+              <th className="text-right px-3 py-2 font-medium text-xs whitespace-nowrap">Остаток тела</th>
+              <th className="text-right px-3 py-2 font-medium text-xs whitespace-nowrap">Остаток тело+%</th>
               <th className="text-right px-3 py-2 font-medium text-xs whitespace-nowrap">Кол-во</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map(r => (
-              <>
-                <tr key={r.period} className="border-b border-gray-50 bg-white hover:bg-gray-50/50">
-                  <td className="px-4 py-2 font-medium text-gray-800 whitespace-nowrap">{fmtPeriod(r.period)}</td>
-                  <td className="text-right px-3 py-2 tabular-nums whitespace-nowrap">{fmt(r.sum_body)}</td>
-                  <td className="text-right px-3 py-2 tabular-nums text-gray-500 whitespace-nowrap">{fmt(r.sum_interest)}</td>
-                  <td className="text-right px-3 py-2 tabular-nums font-semibold whitespace-nowrap">{fmt(r.sum_total)}</td>
-                  <td className="text-right px-3 py-2 tabular-nums text-gray-400 text-xs whitespace-nowrap">
-                    {r.credits.reduce((s, c) => s + c.count, 0)}
-                  </td>
-                </tr>
-                {showDetails && r.credits.map(c => (
-                  <tr key={`${r.period}-${c.credit_id}`} className="border-b border-gray-50 bg-gray-50/30">
-                    <td className="pl-10 pr-4 py-1.5 text-xs text-gray-500 whitespace-nowrap" title={c.credit_name}>
-                      {c.credit_name}
+            {yearKeys.map(year => {
+              const rows = byYear[year]
+              const s = sumYear(rows)
+              const yb = yearBalance(rows)
+              const isExpanded = expandedYears.has(year)
+              return (
+                <>
+                  <tr key={year} className="border-b border-gray-50 bg-white hover:bg-gray-50/50 cursor-pointer" onClick={() => toggleYear(year)}>
+                    <td className="px-4 py-2 font-semibold text-gray-900 whitespace-nowrap">
+                      <span className="inline-block w-4 text-gray-400 mr-1">{isExpanded ? '▼' : '▶'}</span>
+                      {year}
                     </td>
-                    <td className="text-right px-3 py-1.5 tabular-nums text-xs whitespace-nowrap">{fmt(c.body)}</td>
-                    <td className="text-right px-3 py-1.5 tabular-nums text-xs text-gray-500 whitespace-nowrap">{fmt(c.interest)}</td>
-                    <td className="text-right px-3 py-1.5 tabular-nums text-xs whitespace-nowrap">{fmt(c.total)}</td>
-                    <td className="text-right px-3 py-1.5 tabular-nums text-xs text-gray-400 whitespace-nowrap">{c.count}</td>
+                    <td className="text-right px-3 py-2 tabular-nums font-semibold whitespace-nowrap">{fmt(s.body)}</td>
+                    <td className="text-right px-3 py-2 tabular-nums font-semibold text-gray-600 whitespace-nowrap">{fmt(s.interest)}</td>
+                    <td className="text-right px-3 py-2 tabular-nums font-bold whitespace-nowrap">{fmt(s.total)}</td>
+                    <td className="text-right px-3 py-2 tabular-nums text-red-600 whitespace-nowrap">{fmt(yb.body)}</td>
+                    <td className="text-right px-3 py-2 tabular-nums text-red-500 whitespace-nowrap">{fmt(yb.total)}</td>
+                    <td className="text-right px-3 py-2 tabular-nums text-gray-400 text-xs whitespace-nowrap">{s.count}</td>
                   </tr>
-                ))}
-              </>
-            ))}
+                  {isExpanded && rows.map((r: MonthRow) => {
+                    const monthKey = r.period
+                    const monthExpanded = expandedMonths.has(monthKey)
+                    return (
+                      <>
+                        <tr
+                          key={monthKey}
+                          className="border-b border-gray-50 bg-gray-50/30 hover:bg-gray-100/50 cursor-pointer"
+                          onClick={() => toggleMonth(monthKey)}
+                        >
+                          <td className="pl-10 pr-4 py-1.5 text-xs text-gray-700 whitespace-nowrap">
+                            <span className="inline-block w-3 text-gray-400 mr-1">{monthExpanded || showDetails ? '▼' : '▶'}</span>
+                            {fmtMonth(r.period)}
+                          </td>
+                          <td className="text-right px-3 py-1.5 tabular-nums text-xs whitespace-nowrap">{fmt(r.sum_body)}</td>
+                          <td className="text-right px-3 py-1.5 tabular-nums text-xs text-gray-500 whitespace-nowrap">{fmt(r.sum_interest)}</td>
+                          <td className="text-right px-3 py-1.5 tabular-nums text-xs font-semibold whitespace-nowrap">{fmt(r.sum_total)}</td>
+                          <td className="text-right px-3 py-1.5 tabular-nums text-xs text-red-600 whitespace-nowrap">{fmt(balanceAfter.bodyAfter[r.period] ?? 0)}</td>
+                          <td className="text-right px-3 py-1.5 tabular-nums text-xs text-red-500 whitespace-nowrap">{fmt(balanceAfter.totalAfter[r.period] ?? 0)}</td>
+                          <td className="text-right px-3 py-1.5 tabular-nums text-xs text-gray-400 whitespace-nowrap">
+                            {r.credits.reduce((x: number, c) => x + c.count, 0)}
+                          </td>
+                        </tr>
+                        {(monthExpanded || showDetails) && r.credits.map((c) => (
+                          <tr key={`${monthKey}-${c.credit_id}`} className="border-b border-gray-50 bg-gray-50/60">
+                            <td className="pl-16 pr-4 py-1 text-[11px] text-gray-500 whitespace-nowrap" title={c.credit_name}>
+                              {c.credit_name}
+                            </td>
+                            <td className="text-right px-3 py-1 tabular-nums text-[11px] whitespace-nowrap">{fmt(c.body)}</td>
+                            <td className="text-right px-3 py-1 tabular-nums text-[11px] text-gray-500 whitespace-nowrap">{fmt(c.interest)}</td>
+                            <td className="text-right px-3 py-1 tabular-nums text-[11px] whitespace-nowrap">{fmt(c.total)}</td>
+                            <td className="text-right px-3 py-1 tabular-nums text-[11px] text-gray-300 whitespace-nowrap">—</td>
+                            <td className="text-right px-3 py-1 tabular-nums text-[11px] text-gray-300 whitespace-nowrap">—</td>
+                            <td className="text-right px-3 py-1 tabular-nums text-[11px] text-gray-400 whitespace-nowrap">{c.count}</td>
+                          </tr>
+                        ))}
+                      </>
+                    )
+                  })}
+                </>
+              )
+            })}
             <tr className="bg-indigo-50/50 border-t-2 border-t-indigo-100">
               <td className="px-4 py-2 font-bold text-gray-900 whitespace-nowrap">ИТОГО</td>
               <td className="text-right px-3 py-2 tabular-nums font-bold whitespace-nowrap">{fmt(grandBody)}</td>
               <td className="text-right px-3 py-2 tabular-nums font-bold text-gray-700 whitespace-nowrap">{fmt(grandInterest)}</td>
               <td className="text-right px-3 py-2 tabular-nums font-bold whitespace-nowrap">{fmt(grandTotal)}</td>
+              <td></td>
+              <td></td>
               <td></td>
             </tr>
           </tbody>
