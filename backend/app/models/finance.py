@@ -114,3 +114,19 @@ class BalanceSheetManualEntry(Base):
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class TaxRate(Base):
+    """Налоговые ставки по периодам и каналам (УСН %, НДС %)."""
+    __tablename__ = "tax_rates"
+
+    id = Column(Integer, primary_key=True)
+    year = Column(Integer, nullable=False)
+    month = Column(Integer, nullable=True)  # 1..12, null = годовая/квартальная ставка
+    quarter = Column(Integer, nullable=True)  # 1..4, null = месячная/годовая
+    channel_id = Column(Integer, ForeignKey("channels.id"), nullable=True)  # null = для всех каналов
+    usn_pct = Column(Numeric(6, 2), nullable=False, default=0)  # УСН %
+    nds_pct = Column(Numeric(6, 2), nullable=False, default=0)  # НДС %
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
