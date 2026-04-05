@@ -17,6 +17,7 @@ interface PreviewRow {
 
 interface PreviewData {
   filename: string
+  bank_name: string
   rows: PreviewRow[]
   total_rows: number
   auto_classified_count: number
@@ -68,6 +69,7 @@ export default function StatementUploadModal({ open, onClose }: Props) {
       }))
       return {
         filename: raw.filename || f.name,
+        bank_name: raw.bank_name || 'Банковская выписка',
         rows,
         total_rows: raw.total_rows || rows.length,
         auto_classified_count: rows.filter((r: PreviewRow) => r.auto_classified).length,
@@ -86,7 +88,7 @@ export default function StatementUploadModal({ open, onClose }: Props) {
   const confirmMutation = useMutation({
     mutationFn: async () => {
       if (!preview) return Promise.reject()
-      const accountName = preview.filename || 'Банковская выписка'
+      const accountName = preview.bank_name || 'Банковская выписка'
       const entries = preview.rows
         .filter((row) => !skippedRows.has(row.row_index))
         .map((row) => ({

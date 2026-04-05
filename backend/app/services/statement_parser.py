@@ -96,6 +96,35 @@ def parse_statement(file_bytes: bytes, filename: str) -> list[dict]:
         raise ValueError(f"Unsupported file format: {ext}. Expected xlsx or csv.")
 
 
+def detect_bank(filename: str, rows: list[dict]) -> str:
+    """Определяет название банка из имени файла или содержимого выписки."""
+    haystack = filename.lower()
+    # Объединяем первые несколько строк описания в строку поиска
+    haystack += " " + " ".join(
+        (r.get("counterparty", "") + " " + r.get("description", ""))
+        for r in rows[:10]
+    ).lower()
+
+    banks = [
+        (("сбер", "sber"), "Сбербанк"),
+        (("тинькофф", "тбанк", "tinkoff", "tbank"), "Тинькофф"),
+        (("точка", "tochka"), "Точка"),
+        (("альфа", "alfa", "alpha"), "Альфа-Банк"),
+        (("втб", "vtb"), "ВТБ"),
+        (("райффайзен", "raiffeisen"), "Райффайзен"),
+        (("модуль", "modulbank"), "Модульбанк"),
+        (("открытие",), "Открытие"),
+        (("газпромбанк", "gpb"), "Газпромбанк"),
+        (("росбанк",), "Росбанк"),
+        (("пси", "psb", "промсвязь"), "Промсвязьбанк"),
+        (("юникредит", "unicredit"), "Юникредит"),
+    ]
+    for patterns, name in banks:
+        if any(p in haystack for p in patterns):
+            return name
+    return "Банковская выписка"
+
+
 def classify_entries(rows: list[dict]) -> list[dict]:
     """
     Авто-классифицирует строки выписки по категориям.

@@ -17,7 +17,7 @@ from app.services.journal_service import (
     get_journal,
     update_entry,
 )
-from app.services.statement_parser import classify_entries, parse_statement
+from app.services.statement_parser import classify_entries, parse_statement, detect_bank
 
 router = APIRouter()
 
@@ -174,9 +174,11 @@ async def upload_statement(
         raise HTTPException(400, "No data found in file")
 
     classified = classify_entries(rows)
+    bank_name = detect_bank(file.filename, rows)
 
     return {
         "filename": file.filename,
+        "bank_name": bank_name,
         "total_rows": len(classified),
         "entries": classified,
     }
